@@ -7,4 +7,5 @@ import java.util.List;
 public interface WorkerRepository extends JpaRepository<Worker, Long> {
     List<Worker> findBySkill(String skill);
     List<Worker> findByAvailable(Boolean available);
+    List<Worker> findByLocation(String location);
 }
