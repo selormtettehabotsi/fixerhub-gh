@@ -47,7 +47,7 @@ class AuthServiceTest {
         when(userRepository.findByEmail("kelvin@test.com")).thenReturn(Optional.empty());
         when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
-        when(jwtConfig.generateToken(anyString())).thenReturn("mock-jwt-token");
+        when(jwtConfig.generateToken(anyString(), anyString())).thenReturn("mock-jwt-token");
 
         AuthResponse response = authService.register(request);
 
@@ -116,7 +116,7 @@ class AuthServiceTest {
 
         when(userRepository.findByEmail("kelvin@test.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secure123", "encodedPassword")).thenReturn(true);
-        when(jwtConfig.generateToken(anyString())).thenReturn("mock-jwt-token");
+        when(jwtConfig.generateToken(anyString(), anyString())).thenReturn("mock-jwt-token");
 
         AuthResponse response = authService.login(request);
 

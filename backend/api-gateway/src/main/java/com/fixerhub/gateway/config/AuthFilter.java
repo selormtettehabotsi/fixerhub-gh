@@ -41,11 +41,15 @@ public class AuthFilter implements GatewayFilter {
             Claims claims = Jwts.parserBuilder().setSigningKey(key).build()
                     .parseClaimsJws(token).getBody();
 
-            exchange.getRequest().mutate()
-                    .header("X-User-Email", claims.getSubject())
+            String role = claims.get("role", String.class);
+
+            ServerWebExchange mutated = exchange.mutate()
+                    .request(r -> r
+                            .header("X-User-Email", claims.getSubject())
+                            .header("X-User-Role", role != null ? role : ""))
                     .build();
 
-            return chain.filter(exchange);
+            return chain.filter(mutated);
         } catch (Exception e) {
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
