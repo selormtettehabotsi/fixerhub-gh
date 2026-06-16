@@ -4,10 +4,9 @@ import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
 import com.fixerhub.worker.service.WorkerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/workers")
@@ -17,12 +16,17 @@ public class WorkerController {
     private final WorkerService workerService;
 
     @GetMapping
-    public ResponseEntity<List<WorkerProfileResponse>> getAllWorkers(
-            @RequestParam(required = false) String skill) {
+    public ResponseEntity<?> getAllWorkers(
+            @RequestParam(required = false) String skill,
+            @RequestParam(required = false) String location,
+            Pageable pageable) {
         if (skill != null) {
             return ResponseEntity.ok(workerService.getWorkersBySkill(skill));
         }
-        return ResponseEntity.ok(workerService.getAllWorkers());
+        if (location != null) {
+            return ResponseEntity.ok(workerService.getWorkersByLocation(location));
+        }
+        return ResponseEntity.ok(workerService.getAllWorkers(pageable));
     }
 
     @GetMapping("/{id}")
@@ -40,5 +44,12 @@ public class WorkerController {
             @PathVariable Long id,
             @RequestParam Boolean available) {
         return ResponseEntity.ok(workerService.updateAvailability(id, available));
+    }
+
+    @PutMapping("/{id}/rating")
+    public ResponseEntity<WorkerProfileResponse> updateRating(
+            @PathVariable Long id,
+            @RequestParam Double rating) {
+        return ResponseEntity.ok(workerService.updateRating(id, rating));
     }
 }

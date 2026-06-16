@@ -5,6 +5,8 @@ import com.fixerhub.worker.dto.WorkerProfileResponse;
 import com.fixerhub.worker.model.Worker;
 import com.fixerhub.worker.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -42,16 +44,27 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    public WorkerProfileResponse updateRating(Long id, Double rating) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setRating(rating);
+        return toResponse(workerRepository.save(worker));
+    }
+
     public List<WorkerProfileResponse> getWorkersBySkill(String skill) {
         return workerRepository.findBySkill(skill).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
-    public List<WorkerProfileResponse> getAllWorkers() {
-        return workerRepository.findAll().stream()
+    public List<WorkerProfileResponse> getWorkersByLocation(String location) {
+        return workerRepository.findByLocation(location).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    public Page<WorkerProfileResponse> getAllWorkers(Pageable pageable) {
+        return workerRepository.findAll(pageable).map(this::toResponse);
     }
 
     private WorkerProfileResponse toResponse(Worker w) {
