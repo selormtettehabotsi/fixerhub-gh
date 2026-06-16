@@ -4,11 +4,9 @@ import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
 import com.fixerhub.worker.service.WorkerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.data.domain.Pageable;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/workers")

@@ -5,9 +5,9 @@ import com.fixerhub.worker.dto.WorkerProfileResponse;
 import com.fixerhub.worker.model.Worker;
 import com.fixerhub.worker.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -64,8 +64,7 @@ public class WorkerService {
     }
 
     public Page<WorkerProfileResponse> getAllWorkers(Pageable pageable) {
-        return workerRepository.findAll(pageable)
-                .map(this::toResponse);
+        return workerRepository.findAll(pageable).map(this::toResponse);
     }
 
     private WorkerProfileResponse toResponse(Worker w) {

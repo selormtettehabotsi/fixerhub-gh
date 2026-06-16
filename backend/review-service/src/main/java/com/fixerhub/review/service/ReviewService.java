@@ -21,10 +21,10 @@ public class ReviewService {
 
     public ReviewResponse createReview(ReviewRequest request) {
         if (request.getRating() < 1 || request.getRating() > 5) {
-            throw new IllegalArgumentException("Rating must be between 1 and 5");
+            throw new RuntimeException("Rating must be between 1 and 5");
         }
         if (reviewRepository.existsByBookingId(request.getBookingId())) {
-            throw new IllegalStateException("Review already exists for this booking");
+            throw new RuntimeException("Review already exists for this booking");
         }
         Review review = Review.builder()
                 .bookingId(request.getBookingId())
@@ -35,7 +35,9 @@ public class ReviewService {
                 .build();
         Review saved = reviewRepository.save(review);
         double avgRating = getAverageRating(saved.getWorkerId());
-        restTemplate.put("http://worker-service/workers/" + saved.getWorkerId() + "/rating?rating=" + avgRating, null);
+        restTemplate.put(
+                "http://worker-service/workers/" + saved.getWorkerId() + "/rating?rating=" + avgRating,
+                null);
         return toResponse(saved);
     }
 
@@ -47,7 +49,9 @@ public class ReviewService {
 
     public double getAverageRating(Long workerId) {
         List<Review> reviews = reviewRepository.findByWorkerId(workerId);
-        OptionalDouble avg = reviews.stream().mapToInt(Review::getRating).average();
+        OptionalDouble avg = reviews.stream()
+                .mapToInt(Review::getRating)
+                .average();
         return avg.orElse(0.0);
     }
 
