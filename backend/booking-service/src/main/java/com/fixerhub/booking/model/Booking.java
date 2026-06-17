@@ -20,6 +20,9 @@ public class Booking {
     private Long workerId;
     private String serviceType;
 
+    private Double amount;
+    private String notes;
+
     @Enumerated(EnumType.STRING)
     private Status status;
 

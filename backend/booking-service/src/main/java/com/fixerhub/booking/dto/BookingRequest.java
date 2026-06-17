@@ -9,4 +9,6 @@ public class BookingRequest {
     private Long workerId;
     private String serviceType;
     private LocalDateTime scheduledAt;
+    private Double amount;
+    private String notes;
 }

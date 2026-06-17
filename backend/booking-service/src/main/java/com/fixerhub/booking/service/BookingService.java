@@ -15,50 +15,81 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BookingService {
 
-    private final BookingRepository bookingRepository;
-    private final BookingEventPublisher eventPublisher;
+    private final BookingRepository      bookingRepository;
+    private final BookingEventPublisher  bookingEventPublisher;
 
+    // ------------------------------------------------------------------ //
+    //  CREATE
+    // ------------------------------------------------------------------ //
     public BookingResponse createBooking(BookingRequest request) {
         Booking booking = Booking.builder()
                 .customerId(request.getCustomerId())
                 .workerId(request.getWorkerId())
                 .serviceType(request.getServiceType())
-                .scheduledAt(request.getScheduledAt())
+                .amount(request.getAmount())
+                .notes(request.getNotes())
+                .status(Booking.Status.PENDING)
                 .build();
         return toResponse(bookingRepository.save(booking));
     }
 
+    // ------------------------------------------------------------------ //
+    //  READ
+    // ------------------------------------------------------------------ //
     public BookingResponse getBookingById(Long id) {
-        return toResponse(bookingRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Booking not found")));
+        return toResponse(findOrThrow(id));
     }
 
-    public BookingResponse updateStatus(Long id, Booking.Status status) {
-        Booking booking = bookingRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
-        booking.setStatus(status);
+    public List<BookingResponse> getBookingsByCustomer(Long customerId) {
+        return bookingRepository.findByCustomerId(customerId)
+                .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    /** Returns all bookings assigned to the given worker. */
+    public List<BookingResponse> getWorkerBookings(Long workerId) {
+        return bookingRepository.findByWorkerId(workerId)
+                .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    // ------------------------------------------------------------------ //
+    //  UPDATE
+    // ------------------------------------------------------------------ //
+    public BookingResponse updateStatus(Long id, String status) {
+        Booking booking = findOrThrow(id);
+        booking.setStatus(Booking.Status.valueOf(status.toUpperCase()));
         Booking saved = bookingRepository.save(booking);
-        if (status == Booking.Status.COMPLETED) {
-            eventPublisher.publishBookingCompleted(saved.getId());
+
+        if (saved.getStatus() == Booking.Status.COMPLETED) {
+            bookingEventPublisher.publishBookingCompleted(saved.getId());
         }
+
         return toResponse(saved);
     }
 
-    public List<BookingResponse> getCustomerBookings(Long customerId) {
-        return bookingRepository.findByCustomerId(customerId).stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+    public BookingResponse cancelBooking(Long id) {
+        Booking booking = findOrThrow(id);
+        booking.setStatus(Booking.Status.CANCELLED);
+        return toResponse(bookingRepository.save(booking));
     }
 
-    private BookingResponse toResponse(Booking b) {
+    // ------------------------------------------------------------------ //
+    //  HELPERS
+    // ------------------------------------------------------------------ //
+    private Booking findOrThrow(Long id) {
+        return bookingRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
+    }
+
+    private BookingResponse toResponse(Booking booking) {
         return BookingResponse.builder()
-                .id(b.getId())
-                .customerId(b.getCustomerId())
-                .workerId(b.getWorkerId())
-                .serviceType(b.getServiceType())
-                .status(b.getStatus())
-                .scheduledAt(b.getScheduledAt())
-                .createdAt(b.getCreatedAt())
+                .id(booking.getId())
+                .customerId(booking.getCustomerId())
+                .workerId(booking.getWorkerId())
+                .serviceType(booking.getServiceType())
+                .status(booking.getStatus().name())
+                .amount(booking.getAmount())
+                .notes(booking.getNotes())
+                .createdAt(booking.getCreatedAt())
                 .build();
     }
 }
