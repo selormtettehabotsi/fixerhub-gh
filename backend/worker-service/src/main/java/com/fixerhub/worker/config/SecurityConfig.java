@@ -37,6 +37,7 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/workers/**").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/workers/*/availability").hasAnyRole("WORKER", "ADMIN")
                         .anyRequest().authenticated()
                 )
