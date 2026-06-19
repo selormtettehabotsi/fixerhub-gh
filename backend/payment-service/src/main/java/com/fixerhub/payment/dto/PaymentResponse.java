@@ -1,4 +1,4 @@
-/*package com.fixerhub.payment.dto;
+package com.fixerhub.payment.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -7,12 +7,11 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-/*@Data
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentResponse {
-
     private Long id;
     private Long bookingId;
     private Long customerId;
@@ -21,5 +20,3 @@ public class PaymentResponse {
     private String momoReference;
     private LocalDateTime createdAt;
 }
-
- */

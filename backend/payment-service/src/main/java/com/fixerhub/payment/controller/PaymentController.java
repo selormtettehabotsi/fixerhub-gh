@@ -1,4 +1,4 @@
-/*package com.fixerhub.payment.controller;
+package com.fixerhub.payment.controller;
 
 import com.fixerhub.payment.dto.PaymentResponse;
 import com.fixerhub.payment.service.PaymentService;
@@ -25,5 +25,3 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getPaymentsByCustomer(customerId));
     }
 }
-
- */

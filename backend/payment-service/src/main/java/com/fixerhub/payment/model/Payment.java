@@ -1,4 +1,4 @@
-/*package com.fixerhub.payment.model;
+package com.fixerhub.payment.model;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -33,5 +33,3 @@ public class Payment {
         this.createdAt = LocalDateTime.now();
     }
 }
-
- */

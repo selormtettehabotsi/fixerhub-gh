@@ -1,4 +1,4 @@
-/*package com.fixerhub.payment.service;
+package com.fixerhub.payment.service;
 
 import com.fixerhub.payment.dto.PaymentResponse;
 import com.fixerhub.payment.model.Payment;
@@ -40,5 +40,3 @@ public class PaymentService {
                 .build();
     }
 }
-
- */
