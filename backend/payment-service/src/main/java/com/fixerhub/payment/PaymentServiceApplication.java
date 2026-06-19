@@ -1,4 +1,4 @@
-/*package com.fixerhub.payment;
+package com.fixerhub.payment;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -9,5 +9,3 @@ public class PaymentServiceApplication {
         SpringApplication.run(PaymentServiceApplication.class, args);
     }
 }
-
- */
