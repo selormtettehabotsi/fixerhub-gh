@@ -1,9 +1,8 @@
-package com.fixerhub.payment.service;
+/*package com.fixerhub.payment.service;
 
-import com.fixerhub.payment.dto.PaymentRequest;
 import com.fixerhub.payment.dto.PaymentResponse;
-import com.fixerhub.payment.model.Transaction;
-import com.fixerhub.payment.repository.TransactionRepository;
+import com.fixerhub.payment.model.Payment;
+import com.fixerhub.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -14,34 +13,32 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaymentService {
 
-    private final TransactionRepository transactionRepository;
-    private final MomoService momoService;
+    private final PaymentRepository paymentRepository;
 
-    public PaymentResponse initiatePayment(PaymentRequest request) {
-        String reference = momoService.initiatePayment(request.getMomoNumber(), request.getAmount());
-        Transaction transaction = Transaction.builder()
-                .bookingId(request.getBookingId())
-                .amount(request.getAmount())
-                .momoReference(reference)
-                .build();
-        return toResponse(transactionRepository.save(transaction));
+    public PaymentResponse getPaymentByBookingId(Long bookingId) {
+        Payment payment = paymentRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new RuntimeException("Payment not found for bookingId: " + bookingId));
+        return toResponse(payment);
     }
 
-    public List<PaymentResponse> getByBookingId(Long bookingId) {
-        return transactionRepository.findByBookingId(bookingId).stream()
+    public List<PaymentResponse> getPaymentsByCustomer(Long customerId) {
+        return paymentRepository.findByCustomerId(customerId)
+                .stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
-    private PaymentResponse toResponse(Transaction t) {
+    private PaymentResponse toResponse(Payment p) {
         return PaymentResponse.builder()
-                .id(t.getId())
-                .bookingId(t.getBookingId())
-                .amount(t.getAmount())
-                .currency(t.getCurrency())
-                .momoReference(t.getMomoReference())
-                .status(t.getStatus())
-                .createdAt(t.getCreatedAt())
+                .id(p.getId())
+                .bookingId(p.getBookingId())
+                .customerId(p.getCustomerId())
+                .amount(p.getAmount())
+                .status(p.getStatus().name())
+                .momoReference(p.getMomoReference())
+                .createdAt(p.getCreatedAt())
                 .build();
     }
 }
+
+ */

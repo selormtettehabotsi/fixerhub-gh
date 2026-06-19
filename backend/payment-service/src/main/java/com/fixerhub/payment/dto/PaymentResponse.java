@@ -1,20 +1,25 @@
-package com.fixerhub.payment.dto;
+/*package com.fixerhub.payment.dto;
 
-import com.fixerhub.payment.model.Transaction;
-import lombok.*;
-import java.math.BigDecimal;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 
-@Data
+/*@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentResponse {
+
     private Long id;
     private Long bookingId;
-    private BigDecimal amount;
-    private String currency;
+    private Long customerId;
+    private Double amount;
+    private String status;
     private String momoReference;
-    private Transaction.Status status;
     private LocalDateTime createdAt;
 }
+
+ */

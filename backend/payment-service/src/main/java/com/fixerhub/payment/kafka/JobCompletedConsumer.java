@@ -1,34 +1,55 @@
-package com.fixerhub.payment.kafka;
+/*package com.fixerhub.payment.kafka;
 
-import com.fixerhub.payment.dto.PaymentRequest;
-import com.fixerhub.payment.service.PaymentService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fixerhub.payment.model.Payment;
+import com.fixerhub.payment.model.PaymentStatus;
+import com.fixerhub.payment.repository.PaymentRepository;
+import com.fixerhub.payment.service.MomoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
+import java.util.Map;
 
 @Slf4j
-@Component
+@Service
 @RequiredArgsConstructor
 public class JobCompletedConsumer {
 
-    private final PaymentService paymentService;
+    private final MomoService momoService;
+    private final PaymentRepository paymentRepository;
+    private final ObjectMapper objectMapper;
 
-    @KafkaListener(topics = "booking-events", groupId = "payment-service")
+    @KafkaListener(topics = "booking-events", groupId = "payment-group")
     public void consume(String message) {
-        log.info("Received booking event: {}", message);
-        if (message.startsWith("COMPLETED:")) {
-            Long bookingId = Long.parseLong(message.split(":")[1]);
-            log.info("Triggering payment for completed bookingId={}", bookingId);
-            // In production, fetch booking amount from booking-service
-            // Using a default amount here for demonstration
-            PaymentRequest request = new PaymentRequest();
-            request.setBookingId(bookingId);
-            request.setAmount(BigDecimal.valueOf(50.00));
-            request.setMomoNumber("0241234567");
-            paymentService.initiatePayment(request);
+        try {
+            Map<String, Object> data = objectMapper.readValue(message, Map.class);
+
+            Long bookingId = Long.valueOf(data.get("bookingId").toString());
+            Long customerId = Long.valueOf(data.get("customerId").toString());
+            Long workerId = Long.valueOf(data.get("workerId").toString());
+            Double amount = Double.valueOf(data.get("amount").toString());
+
+            String momoReference = momoService.processPayment(bookingId, amount);
+
+            Payment payment = Payment.builder()
+                    .bookingId(bookingId)
+                    .customerId(customerId)
+                    .workerId(workerId)
+                    .amount(amount)
+                    .status(PaymentStatus.SUCCESS)
+                    .momoReference(momoReference)
+                    .build();
+
+            paymentRepository.save(payment);
+
+            log.info("Payment processed for booking {}: {}", bookingId, momoReference);
+
+        } catch (Exception e) {
+            log.error("Failed to process booking event: {}", message, e);
         }
     }
 }
+
+ */
