@@ -4,6 +4,7 @@ import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
 import com.fixerhub.worker.model.Worker;
 import com.fixerhub.worker.repository.WorkerRepository;
+import com.fixerhub.worker.service.GeocodingService;
 import com.fixerhub.worker.service.WorkerService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,9 @@ public class WorkerServiceTest {
 
     @Mock
     private WorkerRepository workerRepository;
+
+    @Mock
+    private GeocodingService geocodingService;
 
     @InjectMocks
     private WorkerService workerService;
