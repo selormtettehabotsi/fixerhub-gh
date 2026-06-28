@@ -16,10 +16,15 @@ public class Worker {
     private Long id;
 
     private Long userId;
+    private String email;
     private String name;
     private String phone;
     private String skill;
     private String location;
     private Double rating;
-    private Boolean available;
+    @Builder.Default
+    private Boolean available = true;
+    private Double latitude;
+    private Double longitude;
+    private Boolean verified = false;
 }

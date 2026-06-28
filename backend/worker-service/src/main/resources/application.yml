@@ -20,3 +20,7 @@ eureka:
 
 jwt:
   secret: ${JWT_SECRET:fixerhub-secret-key-must-be-at-least-256-bits-long}
+
+google:
+  maps:
+    api-key: ${GOOGLE_MAPS_API_KEY}

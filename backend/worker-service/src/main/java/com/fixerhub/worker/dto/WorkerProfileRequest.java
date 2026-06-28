@@ -5,6 +5,7 @@ import lombok.Data;
 @Data
 public class WorkerProfileRequest {
     private Long userId;
+    private String email;
     private String name;
     private String phone;
     private String skill;

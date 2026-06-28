@@ -37,9 +37,18 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Public GET routes — browsing workers requires no auth
                         .requestMatchers(HttpMethod.GET, "/workers/**").permitAll()
-                        .requestMatchers(HttpMethod.PUT, "/workers/*/rating").permitAll()
+                        // Internal: auth-service creates worker profile on WORKER register (no JWT in that call)
+                        .requestMatchers(HttpMethod.POST, "/workers").permitAll()
+                        // Internal: review-service updates rating after a review is submitted
+                        .requestMatchers(HttpMethod.PUT, "/workers/*/rating").authenticated()
+                        // Only ADMIN can verify or unverify workers
+                        .requestMatchers(HttpMethod.PUT, "/workers/*/verify").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/workers/*/unverify").hasRole("ADMIN")
+                        // Workers and admins can toggle availability
                         .requestMatchers(HttpMethod.PUT, "/workers/*/availability").hasAnyRole("WORKER", "ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/workers/by-user/*/availability").hasAnyRole("WORKER", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

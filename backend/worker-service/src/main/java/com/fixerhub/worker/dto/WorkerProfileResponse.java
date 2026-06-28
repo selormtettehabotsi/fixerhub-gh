@@ -18,4 +18,8 @@ public class WorkerProfileResponse {
     private String location;
     private Double rating;
     private Boolean available;
+    private Double latitude;
+    private Double longitude;
+    private Double distanceKm;
+    private Boolean verified;
 }
