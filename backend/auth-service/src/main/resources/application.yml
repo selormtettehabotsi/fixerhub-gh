@@ -1,13 +1,13 @@
 server:
-  port: 8081
+  port: 8091
 
 spring:
   application:
     name: auth-service
   datasource:
     url: jdbc:postgresql://localhost:5432/fixerhub
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    username: ${POSTGRES_USER:fixerhub}
+    password: ${POSTGRES_PASSWORD:fixerhub123}
   jpa:
     hibernate:
       ddl-auto: update
@@ -21,3 +21,13 @@ eureka:
 jwt:
   secret: ${JWT_SECRET:fixerhub-secret-key-must-be-at-least-256-bits-long}
   expiration: 86400000
+
+africastalking:
+  username: ${AT_USERNAME:sandbox}
+  api-key: ${AT_API_KEY:}
+  sms-url: ${AT_SMS_URL:https://api.sandbox.africastalking.com/version1/messaging}
+
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+  api-key: ${CLOUDINARY_API_KEY:}
+  api-secret: ${CLOUDINARY_API_SECRET:}

@@ -41,7 +41,16 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/register", "/auth/login").permitAll()
+                        .requestMatchers(
+                                "/auth/register",
+                                "/auth/login",
+                                "/auth/forgot-password",
+                                "/auth/reset-password",
+                                "/auth/internal/**"
+                        ).permitAll()
+                        // upload and profile/picture require a valid logged-in user
+                        .requestMatchers("/auth/upload").authenticated()
+                        .requestMatchers("/auth/profile/picture").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter,
