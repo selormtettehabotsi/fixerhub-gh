@@ -10,5 +10,9 @@ public class BookingRequest {
     private String serviceType;
     private LocalDateTime scheduledAt;
     private Double amount;
+    private Double minAmount;
+    private Double maxAmount;
     private String notes;
+    private String customerPhone;
+    private String bookingImage;
 }

@@ -13,9 +13,14 @@ public class BookingEventPublisher {
     private static final String TOPIC = "booking-events";
     private final KafkaTemplate<String, String> kafkaTemplate;
 
-    public void publishBookingCompleted(Long bookingId) {
-        String message = "COMPLETED:" + bookingId;
+    // Message format: COMPLETED:<bookingId>:<customerId>:<customerPhone>:<amount>:<workerId>
+    public void publishBookingCompleted(Long bookingId, Long customerId, String customerPhone, Double amount, Long workerId) {
+        String phone    = customerPhone != null ? customerPhone : "";
+        String custId   = customerId != null ? String.valueOf(customerId) : "";
+        String amt      = amount != null ? String.valueOf(amount) : "0.0";
+        String wrkId    = workerId != null ? String.valueOf(workerId) : "";
+        String message  = "COMPLETED:" + bookingId + ":" + custId + ":" + phone + ":" + amt + ":" + wrkId;
         kafkaTemplate.send(TOPIC, message);
-        log.info("Published booking-completed event for bookingId={}", bookingId);
+        log.info("Published booking-completed event: {}", message);
     }
 }

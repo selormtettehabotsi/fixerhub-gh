@@ -38,6 +38,12 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.getWorkerBookings(workerId));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<BookingResponse> updateBooking(@PathVariable Long id,
+                                                         @RequestBody BookingRequest request) {
+        return ResponseEntity.ok(bookingService.updateBooking(id, request));
+    }
+
     @PutMapping("/{id}/status")
     public ResponseEntity<BookingResponse> updateStatus(@PathVariable Long id,
                                                         @RequestBody Map<String, String> body) {
@@ -47,5 +53,11 @@ public class BookingController {
     @DeleteMapping("/{id}")
     public ResponseEntity<BookingResponse> cancelBooking(@PathVariable Long id) {
         return ResponseEntity.ok(bookingService.cancelBooking(id));
+    }
+
+    /** Internal endpoint for admin-service to fetch all bookings. */
+    @GetMapping("/internal/all")
+    public ResponseEntity<List<BookingResponse>> getAllBookings() {
+        return ResponseEntity.ok(bookingService.getAllBookings());
     }
 }

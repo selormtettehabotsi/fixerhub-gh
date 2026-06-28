@@ -18,7 +18,11 @@ public class BookingResponse {
     private Long          workerId;
     private String        serviceType;
     private String        status;
-    private Double        amount;      // ← was missing; added here
+    private Double        amount;
+    private Double        minAmount;
+    private Double        maxAmount;
     private String        notes;
+    private String        customerPhone;
+    private String        bookingImage;
     private LocalDateTime createdAt;
 }

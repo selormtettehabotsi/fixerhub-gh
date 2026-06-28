@@ -21,7 +21,11 @@ public class Booking {
     private String serviceType;
 
     private Double amount;
+    private Double minAmount;
+    private Double maxAmount;
     private String notes;
+    private String customerPhone;
+    private String bookingImage;
 
     @Enumerated(EnumType.STRING)
     private Status status;

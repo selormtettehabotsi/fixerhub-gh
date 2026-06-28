@@ -27,7 +27,11 @@ public class BookingService {
                 .workerId(request.getWorkerId())
                 .serviceType(request.getServiceType())
                 .amount(request.getAmount())
+                .minAmount(request.getMinAmount())
+                .maxAmount(request.getMaxAmount())
                 .notes(request.getNotes())
+                .customerPhone(request.getCustomerPhone())
+                .bookingImage(request.getBookingImage())
                 .status(Booking.Status.PENDING)
                 .build();
         return toResponse(bookingRepository.save(booking));
@@ -42,6 +46,11 @@ public class BookingService {
 
     public List<BookingResponse> getBookingsByCustomer(Long customerId) {
         return bookingRepository.findByCustomerId(customerId)
+                .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    public List<BookingResponse> getAllBookings() {
+        return bookingRepository.findAll()
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
@@ -60,10 +69,26 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
 
         if (saved.getStatus() == Booking.Status.COMPLETED) {
-            bookingEventPublisher.publishBookingCompleted(saved.getId());
+            bookingEventPublisher.publishBookingCompleted(
+                    saved.getId(), saved.getCustomerId(), saved.getCustomerPhone(), saved.getAmount(), saved.getWorkerId());
         }
 
         return toResponse(saved);
+    }
+
+    public BookingResponse updateBooking(Long id, BookingRequest request) {
+        Booking booking = findOrThrow(id);
+        if (booking.getStatus() != Booking.Status.PENDING) {
+            throw new RuntimeException("Only PENDING bookings can be edited");
+        }
+        if (request.getServiceType() != null) booking.setServiceType(request.getServiceType());
+        if (request.getAmount() != null) booking.setAmount(request.getAmount());
+        if (request.getMinAmount() != null) booking.setMinAmount(request.getMinAmount());
+        if (request.getMaxAmount() != null) booking.setMaxAmount(request.getMaxAmount());
+        if (request.getNotes() != null) booking.setNotes(request.getNotes());
+        if (request.getCustomerPhone() != null) booking.setCustomerPhone(request.getCustomerPhone());
+        if (request.getBookingImage() != null) booking.setBookingImage(request.getBookingImage());
+        return toResponse(bookingRepository.save(booking));
     }
 
     public BookingResponse cancelBooking(Long id) {
@@ -88,7 +113,11 @@ public class BookingService {
                 .serviceType(booking.getServiceType())
                 .status(booking.getStatus().name())
                 .amount(booking.getAmount())
+                .minAmount(booking.getMinAmount())
+                .maxAmount(booking.getMaxAmount())
                 .notes(booking.getNotes())
+                .customerPhone(booking.getCustomerPhone())
+                .bookingImage(booking.getBookingImage())
                 .createdAt(booking.getCreatedAt())
                 .build();
     }
