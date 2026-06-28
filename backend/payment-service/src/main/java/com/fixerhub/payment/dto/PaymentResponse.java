@@ -16,6 +16,9 @@ public class PaymentResponse {
     private Long bookingId;
     private Long customerId;
     private Double amount;
+    private Double commissionRate;
+    private Double commissionAmount;
+    private Double workerAmount;
     private String status;
     private String momoReference;
     private LocalDateTime createdAt;

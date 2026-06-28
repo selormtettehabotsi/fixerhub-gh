@@ -20,7 +20,10 @@ public class Payment {
     private Long bookingId;
     private Long customerId;
     private Long workerId;
-    private Double amount;
+    private Double amount;           // total amount paid by customer
+    private Double commissionRate;   // e.g. 0.10 for 10%
+    private Double commissionAmount; // amount FixerHub earns
+    private Double workerAmount;     // amount worker receives
 
     @Enumerated(EnumType.STRING)
     private PaymentStatus status;

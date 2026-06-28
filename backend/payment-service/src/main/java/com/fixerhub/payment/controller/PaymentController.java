@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/payments")
@@ -23,5 +24,11 @@ public class PaymentController {
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<List<PaymentResponse>> getPaymentsByCustomer(@PathVariable Long customerId) {
         return ResponseEntity.ok(paymentService.getPaymentsByCustomer(customerId));
+    }
+
+    /** Internal endpoint for admin-service — no auth required. */
+    @GetMapping("/internal/total-revenue")
+    public ResponseEntity<Map<String, Double>> getTotalRevenue() {
+        return ResponseEntity.ok(paymentService.getTotalRevenue());
     }
 }

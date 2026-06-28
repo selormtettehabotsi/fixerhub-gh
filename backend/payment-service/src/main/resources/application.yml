@@ -27,3 +27,16 @@ eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+
+# MTN MoMo Collections API (Sandbox)
+fixerhub:
+  commission-rate: ${COMMISSION_RATE}
+
+momo:
+  base-url: ${MOMO_BASE_URL}
+  subscription-key: ${MOMO_SUBSCRIPTION_KEY}
+  api-user: ${MOMO_API_USER}
+  api-key: ${MOMO_API_KEY}
+  environment: ${MOMO_ENVIRONMENT}
+  callback-url: ${MOMO_CALLBACK_URL}
+  currency: ${MOMO_CURRENCY}

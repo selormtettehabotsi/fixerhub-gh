@@ -29,6 +29,7 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/payments/internal/**").permitAll()
                 .requestMatchers("/payments/**").authenticated()
                 .anyRequest().authenticated()
             )
