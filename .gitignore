@@ -11,6 +11,14 @@ dist/
 # Environment variables — NEVER commit
 .env
 .env.local
+.env.*
+frontend/.env
+frontend/.env.local
+frontend/.env.*
+
+# Firebase service account 
+**/firebase-service-account.json
+
 
 # IDEs
 .idea/
