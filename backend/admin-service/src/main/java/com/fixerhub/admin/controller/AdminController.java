@@ -29,4 +29,19 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> getDashboardStats() {
         return ResponseEntity.ok(adminService.getDashboardStats());
     }
+
+    @GetMapping("/workers")
+    public ResponseEntity<List<Map<String, Object>>> getAllWorkers() {
+        return ResponseEntity.ok(adminService.getAllWorkers());
+    }
+
+    @PutMapping("/workers/{id}/verify")
+    public ResponseEntity<Map<String, Object>> verifyWorker(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.verifyWorker(id));
+    }
+
+    @PutMapping("/workers/{id}/unverify")
+    public ResponseEntity<Map<String, Object>> unverifyWorker(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.unverifyWorker(id));
+    }
 }
