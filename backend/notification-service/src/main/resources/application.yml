@@ -16,3 +16,13 @@ eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+
+# African's Talking SMS (Sandbox)
+africastalking:
+  username: ${AT_USERNAME}
+  api-key: ${AT_API_KEY}
+  sms-url: ${AT_SMS_URL}
+
+# Firebase FCM
+firebase:
+  service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH}
