@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
 import { getAdminWorkers, verifyWorker, unverifyWorker, AdminWorker } from '../../src/api/admin';
 import { useTabBar } from '../../src/context/TabBarContext';
+import Avatar from '../../src/components/Avatar';
 
 export default function AdminWorkersScreen() {
   const { onScroll } = useTabBar();
@@ -127,11 +128,7 @@ export default function AdminWorkersScreen() {
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={styles.avatarCol}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {item.name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()}
-                </Text>
-              </View>
+              <Avatar uri={item.profilePicture} name={item.name} size={48} />
               {item.verified && (
                 <View style={styles.verifiedBadge}>
                   <Ionicons name="checkmark" size={10} color="#fff" />

@@ -30,6 +30,20 @@ export default function AdminLayout() {
           }}
         />
         <Tabs.Screen
+          name="verifications"
+          options={{
+            title: 'Verify',
+            tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="reports"
+          options={{
+            title: 'Reports',
+            tabBarIcon: ({ color, size }) => <Ionicons name="flag-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: 'Profile',

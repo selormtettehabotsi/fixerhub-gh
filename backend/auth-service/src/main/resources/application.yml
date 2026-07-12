@@ -1,5 +1,5 @@
 server:
-  port: 8091
+  port: 8081
 
 spring:
   application:
@@ -10,8 +10,23 @@ spring:
     password: ${POSTGRES_PASSWORD:fixerhub123}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # D3: Flyway owns the schema; Hibernate only verifies it
     show-sql: false
+  flyway:
+    baseline-on-migrate: true          # shared schema: other services' tables make it "non-empty"
+    baseline-version: 0                # baseline BELOW V1 so V1__init.sql still runs (DDL is IF NOT EXISTS)
+    table: flyway_history_auth         # per-service history table (shared database)
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 eureka:
   client:
@@ -19,8 +34,9 @@ eureka:
       defaultZone: http://localhost:8761/eureka
 
 jwt:
-  secret: ${JWT_SECRET:fixerhub-secret-key-must-be-at-least-256-bits-long}
-  expiration: 86400000
+  secret: ${JWT_SECRET}
+  expiration: 900000            # TOKENS (H6): 15-minute access tokens
+  refresh-expiration: 604800000 # 7-day refresh tokens
 
 africastalking:
   username: ${AT_USERNAME:sandbox}
@@ -31,3 +47,12 @@ cloudinary:
   cloud-name: ${CLOUDINARY_CLOUD_NAME:}
   api-key: ${CLOUDINARY_API_KEY:}
   api-secret: ${CLOUDINARY_API_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

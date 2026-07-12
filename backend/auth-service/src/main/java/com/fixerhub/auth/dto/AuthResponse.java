@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AuthResponse {
     private String token;
+    /** TOKENS (H6): opaque refresh token — exchange at POST /auth/refresh. */
+    private String refreshToken;
     private User.Role role;
     private Long userId;
     private String name;

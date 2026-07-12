@@ -45,7 +45,11 @@ export default function AdminDashboard() {
   }
 
   async function handleLogout() {
-    await AsyncStorage.multiRemove(['token', 'role', 'userId', 'name']);
+    // TOKENS (H6/M1): revoke the refresh token server-side, clear keychain + storage
+    const { logoutServer } = await import('../../src/api/auth');
+    const tokenStorage = await import('../../src/utils/tokenStorage');
+    await logoutServer(await tokenStorage.getItem('refreshToken'));
+    await tokenStorage.multiRemove(['token', 'refreshToken', 'role', 'userId', 'name']);
     router.replace('/(auth)/welcome');
   }
 

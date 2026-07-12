@@ -1,5 +1,6 @@
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { router } from 'expo-router';
+import * as tokenStorage from '../utils/tokenStorage';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
 
@@ -12,17 +13,72 @@ const client = axios.create({
 });
 
 client.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('token');
+  const token = await tokenStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
+// ── TOKENS (H6): auto-refresh on 401 ────────────────────────────────────────
+// Access tokens are short-lived (15 min). On a 401 we exchange the stored
+// refresh token for a new pair, retry the original request once, and only
+// log the user out if the refresh itself fails.
+
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = await tokenStorage.getItem('refreshToken');
+  if (!refreshToken) return null;
+  try {
+    // Plain axios (not `client`) so this call skips the interceptors.
+    const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken }, { timeout: 15000 });
+    const { token, refreshToken: newRefreshToken } = res.data ?? {};
+    if (!token) return null;
+    await tokenStorage.multiSet([
+      ['token', token],
+      ['refreshToken', newRefreshToken ?? ''],
+    ]);
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+async function forceLogout() {
+  await tokenStorage.multiRemove([
+    'token', 'refreshToken', 'role', 'userId', 'name', 'email', 'phone', 'profilePicture',
+  ]);
+  try {
+    router.replace('/(auth)/login');
+  } catch {
+    // Router not ready (e.g. during app start) — storage is cleared, so the
+    // next navigation guard will land on login anyway.
+  }
+}
+
+function isAuthPath(url?: string): boolean {
+  return !!url && (url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh'));
+}
+
 client.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const data = error.response?.data;
+  async (error: AxiosError) => {
+    const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+
+    if (error.response?.status === 401 && original && !original._retried && !isAuthPath(original.url)) {
+      original._retried = true;
+      // De-duplicate concurrent refreshes: all 401s share one refresh call.
+      refreshPromise = refreshPromise ?? refreshAccessToken().finally(() => { refreshPromise = null; });
+      const newToken = await refreshPromise;
+      if (newToken) {
+        original.headers.Authorization = `Bearer ${newToken}`;
+        return client(original);
+      }
+      await forceLogout();
+    }
+
+    const data = error.response?.data as any;
     const message =
       (typeof data === 'string' ? data : null) ??
       data?.message ??

@@ -22,9 +22,13 @@ public class ReviewController {
         return ResponseEntity.ok(reviewService.createReview(request));
     }
 
+    /** M2: bounded list — newest 50 by default, ?page=&size= (max 100) for more. */
     @GetMapping("/worker/{workerId}")
-    public ResponseEntity<List<ReviewResponse>> getWorkerReviews(@PathVariable Long workerId) {
-        return ResponseEntity.ok(reviewService.getWorkerReviews(workerId));
+    public ResponseEntity<List<ReviewResponse>> getWorkerReviews(
+            @PathVariable Long workerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(reviewService.getWorkerReviews(workerId, page, size));
     }
 
     @GetMapping("/worker/{workerId}/rating")

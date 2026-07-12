@@ -29,6 +29,55 @@ export async function pickAndUploadImage(folder: string): Promise<string> {
   return res.data.url;
 }
 
+/** Pick a rectangular photo (no forced 1:1 crop) — ideal for ID cards */
+export async function pickAndUploadDocument(folder: string): Promise<string> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (perm.status !== 'granted') throw new Error('Permission to access photos is required.');
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: 'images',
+    allowsEditing: true,
+    aspect: [3, 2],
+    quality: 0.7,
+  });
+
+  if (result.canceled || !result.assets[0]) throw new Error('No image selected.');
+
+  const asset = result.assets[0];
+  const formData = new FormData();
+  formData.append('file', {
+    uri: asset.uri,
+    name: asset.fileName ?? 'document.jpg',
+    type: asset.mimeType ?? 'image/jpeg',
+  } as any);
+  formData.append('folder', folder);
+
+  const res = await client.post<{ url: string }>('/auth/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data.url;
+}
+
+export async function pickAndUploadVideo(folder: string): Promise<string> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (perm.status !== 'granted') throw new Error('Permission to access media is required.');
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: 'videos',
+    allowsEditing: false,
+    videoMaxDuration: 60,
+    quality: 0.6,
+  });
+  if (result.canceled || !result.assets[0]) throw new Error('No video selected.');
+  const asset = result.assets[0];
+  const formData = new FormData();
+  formData.append('file', { uri: asset.uri, name: 'video.mp4', type: 'video/mp4' } as any);
+  formData.append('folder', folder);
+  const res = await client.post<{ url: string }>('/auth/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data.url;
+}
+
 export async function takeAndUploadPhoto(folder: string): Promise<string> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (perm.status !== 'granted') throw new Error('Permission to use camera is required.');

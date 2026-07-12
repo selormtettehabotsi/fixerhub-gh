@@ -14,5 +14,7 @@ public class ReviewResponse {
     private Long workerId;
     private Integer rating;
     private String comment;
+    private String customerName;
+    private String customerProfilePicture;
     private LocalDateTime createdAt;
 }

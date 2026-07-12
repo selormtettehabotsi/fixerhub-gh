@@ -1,17 +1,21 @@
 package com.fixerhub.review.service;
 
+import com.fixerhub.review.config.AuthContext;
 import com.fixerhub.review.dto.ReviewRequest;
 import com.fixerhub.review.dto.ReviewResponse;
 import com.fixerhub.review.model.Review;
 import com.fixerhub.review.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
@@ -26,12 +30,33 @@ public class ReviewService {
         if (reviewRepository.existsByBookingId(request.getBookingId())) {
             throw new RuntimeException("Review already exists for this booking");
         }
+
+        // SECURITY (N8): a review must come from the booking's own customer,
+        // for the booking's own worker, and only after the job is COMPLETED.
+        // Otherwise anyone could invent bookingIds and poison worker ratings.
+        Map<String, Object> booking = fetchBooking(request.getBookingId());
+        if (booking == null) {
+            throw new RuntimeException("Booking not found");
+        }
+        Long callerId = AuthContext.userId();
+        Long bookingCustomerId = asLong(booking.get("customerId"));
+        Long bookingWorkerId = asLong(booking.get("workerId"));
+        if (!AuthContext.isAdmin() && (callerId == null || !callerId.equals(bookingCustomerId))) {
+            throw new RuntimeException("You can only review your own bookings");
+        }
+        if (!"COMPLETED".equals(String.valueOf(booking.get("status")))) {
+            throw new RuntimeException("You can only review a completed job");
+        }
+
         Review review = Review.builder()
                 .bookingId(request.getBookingId())
-                .customerId(request.getCustomerId())
-                .workerId(request.getWorkerId())
+                // N8: identity fields come from the verified booking, not the client
+                .customerId(bookingCustomerId)
+                .workerId(bookingWorkerId)
                 .rating(request.getRating())
                 .comment(request.getComment())
+                .customerName(request.getCustomerName())
+                .customerProfilePicture(request.getCustomerProfilePicture())
                 .build();
         Review saved = reviewRepository.save(review);
         double avgRating = getAverageRating(saved.getWorkerId());
@@ -41,18 +66,33 @@ public class ReviewService {
         return toResponse(saved);
     }
 
-    public List<ReviewResponse> getWorkerReviews(Long workerId) {
-        return reviewRepository.findByWorkerId(workerId).stream()
+    /** M2: bounded page (newest first, max 100 per call). */
+    public List<ReviewResponse> getWorkerReviews(Long workerId, int page, int size) {
+        var pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page), Math.min(Math.max(1, size), 100));
+        return reviewRepository.findByWorkerIdOrderByIdDesc(workerId, pageable).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     public double getAverageRating(Long workerId) {
-        List<Review> reviews = reviewRepository.findByWorkerId(workerId);
-        OptionalDouble avg = reviews.stream()
-                .mapToInt(Review::getRating)
-                .average();
-        return avg.orElse(0.0);
+        // M2: AVG in SQL instead of loading every review row
+        return reviewRepository.averageRatingByWorkerId(workerId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> fetchBooking(Long bookingId) {
+        try {
+            return restTemplate.getForObject(
+                    "http://booking-service/bookings/internal/" + bookingId, Map.class);
+        } catch (Exception e) {
+            log.warn("Could not fetch booking {} for review validation: {}", bookingId, e.getMessage());
+            return null;
+        }
+    }
+
+    private static Long asLong(Object v) {
+        return v == null ? null : Long.valueOf(String.valueOf(v));
     }
 
     private ReviewResponse toResponse(Review r) {
@@ -63,6 +103,8 @@ public class ReviewService {
                 .workerId(r.getWorkerId())
                 .rating(r.getRating())
                 .comment(r.getComment())
+                .customerName(r.getCustomerName())
+                .customerProfilePicture(r.getCustomerProfilePicture())
                 .createdAt(r.getCreatedAt())
                 .build();
     }

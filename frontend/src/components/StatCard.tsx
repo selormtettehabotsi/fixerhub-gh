@@ -49,4 +49,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.onSurfaceVariant,
   },
+  icon: {
+    fontSize: 22,
+    marginBottom: 6,
+  },
 });

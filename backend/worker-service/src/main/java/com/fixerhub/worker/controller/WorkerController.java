@@ -1,13 +1,23 @@
 package com.fixerhub.worker.controller;
 
+import com.fixerhub.worker.config.AuthContext;
+import com.fixerhub.worker.dto.PortfolioItemResponse;
 import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
+import com.fixerhub.worker.service.PortfolioService;
 import com.fixerhub.worker.service.WorkerService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/workers")
@@ -15,6 +25,32 @@ import org.springframework.web.bind.annotation.*;
 public class WorkerController {
 
     private final WorkerService workerService;
+    private final PortfolioService portfolioService;
+
+    // ─── SECURITY (H1): public-safe DTO ──────────────────────────────────────
+
+    /** Strips PII (phone, email, momo network, KYC document URLs) for unauthenticated routes. */
+    private static WorkerProfileResponse sanitize(WorkerProfileResponse w) {
+        if (w == null) return null;
+        w.setPhone(null);
+        w.setEmail(null);
+        w.setMomoNetwork(null);
+        w.setVerificationDocumentUrl(null);
+        w.setIdFrontUrl(null);
+        w.setIdBackUrl(null);
+        w.setHeadshotUrl(null);
+        w.setVerificationNote(null);
+        // SECURITY (N6): never expose a worker's exact home coordinates publicly.
+        // Round to 2 decimal places (~1.1 km) — enough for a map pin, not enough
+        // to locate a house. distanceKm stays precise (computed server-side).
+        if (w.getLatitude() != null)  w.setLatitude(Math.round(w.getLatitude() * 100.0) / 100.0);
+        if (w.getLongitude() != null) w.setLongitude(Math.round(w.getLongitude() * 100.0) / 100.0);
+        return w;
+    }
+
+    private static List<WorkerProfileResponse> sanitize(List<WorkerProfileResponse> workers) {
+        return workers.stream().map(WorkerController::sanitize).collect(Collectors.toList());
+    }
 
     @GetMapping
     public ResponseEntity<?> getAllWorkers(
@@ -22,17 +58,30 @@ public class WorkerController {
             @RequestParam(required = false) String location,
             Pageable pageable) {
         if (skill != null) {
-            return ResponseEntity.ok(workerService.getWorkersBySkill(skill));
+            return ResponseEntity.ok(sanitize(workerService.getWorkersBySkill(skill)));
         }
         if (location != null) {
-            return ResponseEntity.ok(workerService.getWorkersByLocation(location));
+            return ResponseEntity.ok(sanitize(workerService.getWorkersByLocation(location)));
         }
-        return ResponseEntity.ok(workerService.getAllWorkers(pageable));
+        return ResponseEntity.ok(workerService.getAllWorkers(pageable).map(WorkerController::sanitize));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<WorkerProfileResponse> getWorkerById(@PathVariable Long id) {
+        return ResponseEntity.ok(sanitize(workerService.getWorkerById(id)));
+    }
+
+    /** Internal: full (unsanitized) worker record for service-to-service calls — blocked at the gateway. */
+    @GetMapping("/internal/{id}")
+    public ResponseEntity<WorkerProfileResponse> getWorkerInternal(@PathVariable Long id) {
         return ResponseEntity.ok(workerService.getWorkerById(id));
+    }
+
+    /** M4 (internal): auth-service removes the worker profile when the account is deleted. */
+    @DeleteMapping("/internal/by-user/{userId}")
+    public ResponseEntity<Void> deleteByUserIdInternal(@PathVariable Long userId) {
+        workerService.deleteByUserId(userId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping
@@ -54,29 +103,73 @@ public class WorkerController {
         return ResponseEntity.ok(workerService.updateRating(id, rating));
     }
 
-    /**
-     * Find available workers near a location.
-     * Example: GET /workers/nearby?lat=5.6037&lng=-0.1870&radius=10&skill=Plumbing
-     */
     @GetMapping("/nearby")
     public ResponseEntity<?> getNearbyWorkers(
             @RequestParam double lat,
             @RequestParam double lng,
             @RequestParam(defaultValue = "10") double radius,
-            @RequestParam(required = false) String skill) {
-        return ResponseEntity.ok(workerService.getNearbyWorkers(lat, lng, radius, skill));
+            @RequestParam(required = false) String skill,
+            @RequestParam(required = false) Double minRating,
+            @RequestParam(required = false) Boolean verified) {
+        return ResponseEntity.ok(sanitize(workerService.getNearbyWorkers(lat, lng, radius, skill, minRating, verified)));
     }
 
-    /** Get a worker profile by their auth userId (used by the worker's own dashboard). */
+    /** SECURITY (H1): full own-profile view — authenticated, self or admin only. */
     @GetMapping("/by-user/{userId}")
     public ResponseEntity<WorkerProfileResponse> getWorkerByUserId(
             @PathVariable Long userId,
             HttpServletRequest request) {
+        if (!AuthContext.isAdmin() && !userId.equals(AuthContext.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only view your own worker profile");
+        }
         String email = request.getHeader("X-User-Email");
         return ResponseEntity.ok(workerService.getWorkerByUserId(userId, email));
     }
 
-    /** Update availability using the auth userId (used by the worker's own toggle). */
+    /** Update pricing range and style for a worker. */
+    @PutMapping("/by-user/{userId}/pricing")
+    public ResponseEntity<WorkerProfileResponse> updatePricing(
+            @PathVariable Long userId,
+            @RequestBody Map<String, Object> body) {
+        BigDecimal minPrice = body.get("minPrice") != null ? new BigDecimal(body.get("minPrice").toString()) : null;
+        BigDecimal maxPrice = body.get("maxPrice") != null ? new BigDecimal(body.get("maxPrice").toString()) : null;
+        String pricingStyle = (String) body.get("pricingStyle");
+        return ResponseEntity.ok(workerService.updatePricing(userId, minPrice, maxPrice, pricingStyle));
+    }
+
+    /** Update the worker's mobile money network for automated payouts. */
+    @PutMapping("/by-user/{userId}/momo-network")
+    public ResponseEntity<WorkerProfileResponse> updateMomoNetwork(
+            @PathVariable Long userId,
+            @RequestBody Map<String, String> body) {
+        String momoNetwork = body.getOrDefault("momoNetwork", "MTN");
+        return ResponseEntity.ok(workerService.updateMomoNetwork(userId, momoNetwork));
+    }
+
+    /** Sync profile picture from auth-service into the worker profile record. */
+    @PutMapping("/by-user/{userId}/profile-picture")
+    public ResponseEntity<WorkerProfileResponse> updateProfilePicture(
+            @PathVariable Long userId,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.updateProfilePicture(userId, body.getOrDefault("profilePicture", "")));
+    }
+
+    /**
+     * LIVE DISTANCE: worker app pushes its current GPS so nearby distances
+     * track where the worker actually is. Self or admin only.
+     */
+    @PutMapping("/by-user/{userId}/location")
+    public ResponseEntity<WorkerProfileResponse> updateLiveLocation(
+            @PathVariable Long userId,
+            @RequestBody Map<String, Object> body) {
+        if (!AuthContext.isAdmin() && !userId.equals(AuthContext.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only update your own location");
+        }
+        Double lat = body.get("lat") != null ? Double.valueOf(body.get("lat").toString()) : null;
+        Double lng = body.get("lng") != null ? Double.valueOf(body.get("lng").toString()) : null;
+        return ResponseEntity.ok(sanitize(workerService.updateLiveLocation(userId, lat, lng)));
+    }
+
     @PutMapping("/by-user/{userId}/availability")
     public ResponseEntity<WorkerProfileResponse> updateAvailabilityByUserId(
             @PathVariable Long userId,
@@ -96,16 +189,100 @@ public class WorkerController {
         return ResponseEntity.ok(workerService.unverifyWorker(id));
     }
 
-    /** Internal endpoint for admin-service — returns all workers. */
+    @PostMapping("/{id}/upload-document")
+    public ResponseEntity<WorkerProfileResponse> uploadDocument(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.saveDocumentUrl(id, body.get("documentUrl")));
+    }
+
+    // ─── KYC Verification ────────────────────────────────────────────────────
+
+    /** Worker submits ID front, ID back, and headshot for admin review */
+    @PostMapping("/{id}/verification/submit")
+    public ResponseEntity<WorkerProfileResponse> submitVerificationDocs(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.submitVerificationDocs(
+                id, body.get("idFrontUrl"), body.get("idBackUrl"), body.get("headshotUrl")));
+    }
+
+    /** Admin approves a worker's KYC documents */
+    @PutMapping("/{id}/verification/approve")
+    public ResponseEntity<WorkerProfileResponse> approveVerification(@PathVariable Long id) {
+        return ResponseEntity.ok(workerService.approveVerification(id));
+    }
+
+    /** Admin declines a worker's KYC documents with a reason */
+    @PutMapping("/{id}/verification/decline")
+    public ResponseEntity<WorkerProfileResponse> declineVerification(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.declineVerification(id, body.get("note")));
+    }
+
+    /** Admin asks the worker to resubmit clearer photos */
+    @PutMapping("/{id}/verification/request-resubmit")
+    public ResponseEntity<WorkerProfileResponse> requestResubmit(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.requestResubmit(id, body.get("note")));
+    }
+
+    /** Internal: admin-service fetches all workers pending KYC review */
+    @GetMapping("/internal/verification/pending")
+    public ResponseEntity<List<WorkerProfileResponse>> getPendingVerifications() {
+        return ResponseEntity.ok(workerService.getPendingVerifications());
+    }
+
+    /** Internal: admin-service approves KYC (no JWT required — trusted service call) */
+    @PutMapping("/internal/{id}/verification/approve")
+    public ResponseEntity<WorkerProfileResponse> approveVerificationInternal(@PathVariable Long id) {
+        return ResponseEntity.ok(workerService.approveVerification(id));
+    }
+
+    /** Internal: admin-service declines KYC (no JWT required — trusted service call) */
+    @PutMapping("/internal/{id}/verification/decline")
+    public ResponseEntity<WorkerProfileResponse> declineVerificationInternal(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.declineVerification(id, body.get("note")));
+    }
+
+    /** Internal: admin-service requests KYC resubmission (no JWT required — trusted service call) */
+    @PutMapping("/internal/{id}/verification/request-resubmit")
+    public ResponseEntity<WorkerProfileResponse> requestResubmitInternal(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.requestResubmit(id, body.get("note")));
+    }
+
+    @PostMapping("/{id}/portfolio")
+    public ResponseEntity<PortfolioItemResponse> addPortfolioItem(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(portfolioService.addPortfolioItem(id, body.get("imageUrl"), body.get("caption")));
+    }
+
+    @GetMapping("/{id}/portfolio")
+    public ResponseEntity<List<PortfolioItemResponse>> getPortfolio(@PathVariable Long id) {
+        return ResponseEntity.ok(portfolioService.getPortfolioByWorker(id));
+    }
+
+    @DeleteMapping("/portfolio/{portfolioId}")
+    public ResponseEntity<Void> deletePortfolioItem(@PathVariable Long portfolioId) {
+        portfolioService.deletePortfolioItem(portfolioId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/internal/all")
-    public ResponseEntity<java.util.List<WorkerProfileResponse>> getAllWorkersInternal() {
+    public ResponseEntity<List<WorkerProfileResponse>> getAllWorkersInternal() {
         return ResponseEntity.ok(workerService.getAllWorkersForAdmin());
     }
 
-    /** Internal endpoint for admin-service — returns count of available workers. */
     @GetMapping("/internal/active-count")
-    public ResponseEntity<java.util.Map<String, Integer>> getActiveWorkerCount() {
+    public ResponseEntity<Map<String, Integer>> getActiveWorkerCount() {
         int count = workerService.getActiveWorkerCount();
-        return ResponseEntity.ok(java.util.Map.of("activeWorkers", count));
+        return ResponseEntity.ok(Map.of("activeWorkers", count));
     }
 }

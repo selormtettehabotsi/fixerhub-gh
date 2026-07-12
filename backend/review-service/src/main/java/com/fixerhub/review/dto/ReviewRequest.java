@@ -9,4 +9,6 @@ public class ReviewRequest {
     private Long workerId;
     private Integer rating;
     private String comment;
+    private String customerName;
+    private String customerProfilePicture;
 }

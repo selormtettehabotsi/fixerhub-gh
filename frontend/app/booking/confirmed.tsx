@@ -5,6 +5,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
+import { formatBookingId } from '../../src/utils/formatId';
 
 export default function BookingConfirmedScreen() {
   const { bookingId, workerName } = useLocalSearchParams<{
@@ -26,7 +27,7 @@ export default function BookingConfirmedScreen() {
 
         <View style={styles.refCard}>
           <Text style={styles.refLabel}>Booking Reference</Text>
-          <Text style={styles.refNumber}>#{bookingId ?? '—'}</Text>
+          <Text style={styles.refNumber}>{formatBookingId(bookingId)}</Text>
         </View>
 
         <View style={styles.etaCard}>

@@ -2,14 +2,17 @@ package com.fixerhub.worker.service;
 
 import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
+import com.fixerhub.worker.model.VerificationStatus;
 import com.fixerhub.worker.model.Worker;
 import com.fixerhub.worker.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -33,7 +36,6 @@ public class WorkerService {
                 .available(true)
                 .build();
 
-        // Geocode location to lat/lng
         if (request.getLocation() != null && !request.getLocation().isEmpty()) {
             double[] coords = geocodingService.geocode(request.getLocation());
             if (coords != null) {
@@ -45,12 +47,17 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    @Cacheable(value = "worker", key = "#id")
     public WorkerProfileResponse getWorkerById(Long id) {
         Worker worker = workerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
         return toResponse(worker);
     }
 
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
     public WorkerProfileResponse updateAvailability(Long id, Boolean available) {
         Worker worker = workerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
@@ -58,9 +65,34 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
     public WorkerProfileResponse updateAvailabilityByUserId(Long userId, String email, Boolean available) {
         Worker worker = findWorkerByUserIdOrEmail(userId, email);
         worker.setAvailable(available);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    /**
+     * LIVE DISTANCE: the worker app pushes its real GPS position here so
+     * nearby-search distances reflect where the worker actually IS, not the
+     * address geocoded once at signup. Evicts both caches so customers see
+     * the updated distance on their next fetch.
+     */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updateLiveLocation(Long userId, Double lat, Double lng) {
+        if (lat == null || lng == null || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new IllegalArgumentException("Invalid coordinates");
+        }
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setLatitude(lat);
+        worker.setLongitude(lng);
         return toResponse(workerRepository.save(worker));
     }
 
@@ -68,10 +100,6 @@ public class WorkerService {
         return toResponse(findWorkerByUserIdOrEmail(userId, email));
     }
 
-    /**
-     * Finds a worker by userId, falls back to email. If still not found, creates a minimal
-     * profile so the worker can use the app without re-registering.
-     */
     private Worker findWorkerByUserIdOrEmail(Long userId, String email) {
         return workerRepository.findByUserId(userId).orElseGet(() ->
             workerRepository.findByEmail(email).map(w -> {
@@ -93,10 +121,15 @@ public class WorkerService {
         );
     }
 
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
     public WorkerProfileResponse updateRating(Long id, Double rating) {
         Worker worker = workerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
         worker.setRating(rating);
+        log.info("Updated rating for workerId={} to {}", id, rating);
         return toResponse(workerRepository.save(worker));
     }
 
@@ -120,6 +153,10 @@ public class WorkerService {
         return workerRepository.findAllAvailableOrUnset().size();
     }
 
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
     public WorkerProfileResponse verifyWorker(Long id) {
         Worker worker = workerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
@@ -127,11 +164,117 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
     public WorkerProfileResponse unverifyWorker(Long id) {
         Worker worker = workerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
         worker.setVerified(false);
         return toResponse(workerRepository.save(worker));
+    }
+
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse saveDocumentUrl(Long id, String documentUrl) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setVerificationDocumentUrl(documentUrl);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    // ─── KYC Verification ────────────────────────────────────────────────────
+
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse submitVerificationDocs(Long id, String idFrontUrl,
+                                                        String idBackUrl, String headshotUrl) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setIdFrontUrl(idFrontUrl);
+        worker.setIdBackUrl(idBackUrl);
+        worker.setHeadshotUrl(headshotUrl);
+        worker.setVerificationStatus(VerificationStatus.PENDING);
+        worker.setVerificationNote(null);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse approveVerification(Long id) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setVerificationStatus(VerificationStatus.APPROVED);
+        worker.setVerified(true);
+        worker.setVerificationNote(null);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse declineVerification(Long id, String note) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setVerificationStatus(VerificationStatus.DECLINED);
+        worker.setVerified(false);
+        worker.setVerificationNote(note);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse requestResubmit(Long id, String note) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setVerificationStatus(VerificationStatus.RESUBMIT_REQUESTED);
+        worker.setVerificationNote(note);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    /** Update pricing info (min/max price + pricing style). */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updatePricing(Long userId, BigDecimal minPrice, BigDecimal maxPrice, String pricingStyle) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found for userId: " + userId));
+        worker.setMinPrice(minPrice);
+        worker.setMaxPrice(maxPrice);
+        // Only overwrite pricingStyle when the client actually sent one — the
+        // profile screen saves min/max only, and used to silently wipe the style.
+        if (pricingStyle != null) {
+            worker.setPricingStyle(pricingStyle);
+        }
+        return toResponse(workerRepository.save(worker));
+    }
+
+    /** Sync the profile picture URL from auth-service into the worker profile. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updateProfilePicture(Long userId, String profilePicture) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found for userId: " + userId));
+        worker.setProfilePicture(profilePicture);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    public List<WorkerProfileResponse> getPendingVerifications() {
+        return workerRepository.findByVerificationStatus(VerificationStatus.PENDING)
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<WorkerProfileResponse> getAllWorkersForAdmin() {
@@ -140,21 +283,19 @@ public class WorkerService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Returns all available workers sorted by distance from the customer (nearest first).
-     * Workers without coordinates are appended at the end.
-     */
+    @Cacheable(value = "nearby", key = "#lat + ':' + #lng + ':' + #radiusKm + ':' + #skill + ':' + #minRating + ':' + #verified")
     public List<WorkerProfileResponse> getNearbyWorkers(double lat, double lng,
-                                                         double radiusKm, String skill) {
+                                                         double radiusKm, String skill,
+                                                         Double minRating, Boolean verified) {
         List<Worker> workers = workerRepository.findAllAvailableOrUnset();
 
         List<WorkerProfileResponse> withCoords = workers.stream()
                 .filter(w -> w.getLatitude() != null && w.getLongitude() != null)
-                .filter(w -> skill == null || skill.isEmpty()
-                        || skill.equalsIgnoreCase(w.getSkill()))
+                .filter(w -> skill == null || skill.isEmpty() || skill.equalsIgnoreCase(w.getSkill()))
+                .filter(w -> minRating == null || (w.getRating() != null && w.getRating() >= minRating))
+                .filter(w -> verified == null || !verified || Boolean.TRUE.equals(w.getVerified()))
                 .map(w -> {
-                    double distance = geocodingService.distanceKm(lat, lng,
-                            w.getLatitude(), w.getLongitude());
+                    double distance = geocodingService.distanceKm(lat, lng, w.getLatitude(), w.getLongitude());
                     WorkerProfileResponse response = toResponse(w);
                     response.setDistanceKm(Math.round(distance * 10.0) / 10.0);
                     return response;
@@ -164,8 +305,9 @@ public class WorkerService {
 
         List<WorkerProfileResponse> withoutCoords = workers.stream()
                 .filter(w -> w.getLatitude() == null || w.getLongitude() == null)
-                .filter(w -> skill == null || skill.isEmpty()
-                        || skill.equalsIgnoreCase(w.getSkill()))
+                .filter(w -> skill == null || skill.isEmpty() || skill.equalsIgnoreCase(w.getSkill()))
+                .filter(w -> minRating == null || (w.getRating() != null && w.getRating() >= minRating))
+                .filter(w -> verified == null || !verified || Boolean.TRUE.equals(w.getVerified()))
                 .map(this::toResponse)
                 .collect(Collectors.toList());
 
@@ -178,6 +320,7 @@ public class WorkerService {
                 .id(w.getId())
                 .userId(w.getUserId())
                 .name(w.getName())
+                .email(w.getEmail())
                 .phone(w.getPhone())
                 .skill(w.getSkill())
                 .location(w.getLocation())
@@ -186,6 +329,39 @@ public class WorkerService {
                 .latitude(w.getLatitude())
                 .longitude(w.getLongitude())
                 .verified(w.getVerified() != null ? w.getVerified() : false)
+                .profilePicture(w.getProfilePicture())
+                .verificationDocumentUrl(w.getVerificationDocumentUrl())
+                .idFrontUrl(w.getIdFrontUrl())
+                .idBackUrl(w.getIdBackUrl())
+                .headshotUrl(w.getHeadshotUrl())
+                .verificationStatus(w.getVerificationStatus() != null
+                        ? w.getVerificationStatus() : VerificationStatus.NONE)
+                .verificationNote(w.getVerificationNote())
+                .minPrice(w.getMinPrice())
+                .maxPrice(w.getMaxPrice())
+                .pricingStyle(w.getPricingStyle())
+                .momoNetwork(w.getMomoNetwork() != null ? w.getMomoNetwork() : "MTN")
                 .build();
+    }
+
+    /** Update the worker's mobile money network for automated payouts. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updateMomoNetwork(Long userId, String momoNetwork) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found for userId: " + userId));
+        worker.setMomoNetwork(momoNetwork);
+        return toResponse(workerRepository.save(worker));
+    }
+
+    /** M4: remove the worker profile when the owning account is deleted. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public void deleteByUserId(Long userId) {
+        workerRepository.findByUserId(userId).ifPresent(workerRepository::delete);
     }
 }

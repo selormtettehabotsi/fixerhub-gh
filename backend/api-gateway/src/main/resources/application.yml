@@ -10,6 +10,10 @@ spring:
         locator:
           enabled: true
           lower-case-service-id: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 eureka:
   client:
@@ -17,4 +21,16 @@ eureka:
       defaultZone: http://localhost:8761/eureka
 
 jwt:
-  secret: ${JWT_SECRET:fixerhub-secret-key-must-be-at-least-256-bits-long}
+  secret: ${JWT_SECRET}
+
+gateway:
+  secret: ${GATEWAY_SECRET}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

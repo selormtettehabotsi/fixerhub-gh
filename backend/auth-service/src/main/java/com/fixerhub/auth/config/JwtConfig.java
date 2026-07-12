@@ -23,9 +23,15 @@ public class JwtConfig {
     }
 
     public String generateToken(String email, String role) {
+        return generateToken(email, role, null);
+    }
+
+    /** SECURITY (C4): tokens carry the numeric userId so downstream services can enforce ownership. */
+    public String generateToken(String email, String role, Long userId) {
         return Jwts.builder()
                 .setSubject(email)
                 .claim("role", role)
+                .claim("userId", userId)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)

@@ -33,8 +33,18 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
             .authorizeHttpRequests(auth -> auth
-                // Public read access
-                .requestMatchers(HttpMethod.GET,  "/bookings/**").permitAll()
+                // WebSocket handshake — no HTTP auth; STOMP CONNECT enforces the JWT (N1)
+                .requestMatchers("/ws/**", "/ws/info/**").permitAll()
+                // SECURITY (N1): chat history requires auth; ownership checked in ChatController
+                .requestMatchers("/chat/**").authenticated()
+
+                // Internal service-to-service endpoint (admin-service, direct call —
+                // blocked at the gateway so it is never reachable from outside)
+                .requestMatchers(HttpMethod.GET,  "/bookings/internal/**").permitAll()
+
+                // SECURITY (C4): booking reads require authentication; ownership is
+                // enforced per-request by BookingAccessGuard.
+                .requestMatchers(HttpMethod.GET,  "/bookings/**").authenticated()
 
                 // Role-restricted write access
                 .requestMatchers(HttpMethod.POST, "/bookings").hasAnyRole("CUSTOMER", "ADMIN")

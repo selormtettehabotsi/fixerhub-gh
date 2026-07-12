@@ -24,6 +24,8 @@ public class Review {
     private Integer rating;
 
     private String comment;
+    private String customerName;
+    private String customerProfilePicture;
 
     @Column(updatable = false)
     private LocalDateTime createdAt;

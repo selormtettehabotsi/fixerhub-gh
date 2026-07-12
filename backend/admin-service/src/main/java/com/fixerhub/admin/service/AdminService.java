@@ -3,10 +3,12 @@ package com.fixerhub.admin.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -49,19 +51,20 @@ public class AdminService {
         }
     }
 
-    public Map<String, Double> getRevenueStats() {
+    public Map<String, BigDecimal> getRevenueStats() {
         log.info("Fetching revenue stats from payment-service");
         try {
-            Map<String, Double> result = restTemplate.exchange(
+            Map<String, BigDecimal> result = restTemplate.exchange(
                     "http://payment-service/payments/internal/total-revenue",
                     HttpMethod.GET,
                     null,
-                    new ParameterizedTypeReference<Map<String, Double>>() {}
+                    new ParameterizedTypeReference<Map<String, BigDecimal>>() {}
             ).getBody();
-            return result != null ? result : Map.of("totalRevenue", 0.0, "totalCommission", 0.0, "totalWorkerPayouts", 0.0);
+            return result != null ? result
+                    : Map.of("totalRevenue", BigDecimal.ZERO, "totalCommission", BigDecimal.ZERO, "totalWorkerPayouts", BigDecimal.ZERO);
         } catch (Exception e) {
             log.error("Failed to fetch revenue from payment-service: {}", e.getMessage());
-            return Map.of("totalRevenue", 0.0, "totalCommission", 0.0, "totalWorkerPayouts", 0.0);
+            return Map.of("totalRevenue", BigDecimal.ZERO, "totalCommission", BigDecimal.ZERO, "totalWorkerPayouts", BigDecimal.ZERO);
         }
     }
 
@@ -111,13 +114,79 @@ public class AdminService {
         }
     }
 
+    // ─── KYC Verification Proxies ─────────────────────────────────────────────
+
+    public List<Map<String, Object>> getPendingVerifications() {
+        log.info("Fetching pending KYC verifications from worker-service");
+        try {
+            List<Map<String, Object>> result = restTemplate.exchange(
+                    "http://worker-service/workers/internal/verification/pending",
+                    HttpMethod.GET, null,
+                    new ParameterizedTypeReference<List<Map<String, Object>>>() {}
+            ).getBody();
+            return result != null ? result : List.of();
+        } catch (Exception e) {
+            log.error("Failed to fetch pending verifications: {}", e.getMessage());
+            return List.of(Map.of("error", e.getMessage()));
+        }
+    }
+
+    public Map<String, Object> approveVerification(Long workerId) {
+        log.info("Approving KYC for worker {}", workerId);
+        try {
+            // Use /internal/ path — bypasses worker-service JWT requirement for trusted service calls
+            Map<String, Object> result = restTemplate.exchange(
+                    "http://worker-service/workers/internal/" + workerId + "/verification/approve",
+                    HttpMethod.PUT, null,
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
+            return result != null ? result : Map.of();
+        } catch (Exception e) {
+            log.error("Failed to approve verification for worker {}: {}", workerId, e.getMessage());
+            // Rethrow so GlobalExceptionHandler returns a proper HTTP error to the frontend.
+            // Without this, the frontend sees HTTP 200 and removes the card even though
+            // the worker-service was never updated — causing the worker to reappear on refresh.
+            throw new RuntimeException("Could not approve verification: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> declineVerification(Long workerId, Map<String, String> body) {
+        log.info("Declining KYC for worker {}", workerId);
+        try {
+            Map<String, Object> result = restTemplate.exchange(
+                    "http://worker-service/workers/internal/" + workerId + "/verification/decline",
+                    HttpMethod.PUT, new HttpEntity<>(body),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
+            return result != null ? result : Map.of();
+        } catch (Exception e) {
+            log.error("Failed to decline verification for worker {}: {}", workerId, e.getMessage());
+            throw new RuntimeException("Could not decline verification: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> requestResubmit(Long workerId, Map<String, String> body) {
+        log.info("Requesting resubmission for worker {}", workerId);
+        try {
+            Map<String, Object> result = restTemplate.exchange(
+                    "http://worker-service/workers/internal/" + workerId + "/verification/request-resubmit",
+                    HttpMethod.PUT, new HttpEntity<>(body),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
+            return result != null ? result : Map.of();
+        } catch (Exception e) {
+            log.error("Failed to request resubmission for worker {}: {}", workerId, e.getMessage());
+            throw new RuntimeException("Could not request resubmission: " + e.getMessage());
+        }
+    }
+
     public Map<String, Object> getDashboardStats() {
         log.info("Fetching dashboard stats");
         int totalUsers = 0;
         int totalBookings = 0;
-        double totalRevenue = 0.0;
-        double totalCommission = 0.0;
-        double totalWorkerPayouts = 0.0;
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal totalCommission = BigDecimal.ZERO;
+        BigDecimal totalWorkerPayouts = BigDecimal.ZERO;
 
         try {
             List<Map<String, Object>> users = getAllUsers();
@@ -136,10 +205,10 @@ public class AdminService {
         }
 
         try {
-            Map<String, Double> revenueStats = getRevenueStats();
-            totalRevenue       = revenueStats.getOrDefault("totalRevenue", 0.0);
-            totalCommission    = revenueStats.getOrDefault("totalCommission", 0.0);
-            totalWorkerPayouts = revenueStats.getOrDefault("totalWorkerPayouts", 0.0);
+            Map<String, BigDecimal> revenueStats = getRevenueStats();
+            totalRevenue       = revenueStats.getOrDefault("totalRevenue", BigDecimal.ZERO);
+            totalCommission    = revenueStats.getOrDefault("totalCommission", BigDecimal.ZERO);
+            totalWorkerPayouts = revenueStats.getOrDefault("totalWorkerPayouts", BigDecimal.ZERO);
         } catch (Exception e) {
             log.warn("Could not get revenue stats: {}", e.getMessage());
         }

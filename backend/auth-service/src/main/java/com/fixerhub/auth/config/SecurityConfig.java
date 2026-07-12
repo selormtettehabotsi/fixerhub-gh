@@ -2,6 +2,7 @@ package com.fixerhub.auth.config;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -44,13 +45,19 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/auth/register",
                                 "/auth/login",
+                                "/auth/refresh",
+                                "/auth/logout",
                                 "/auth/forgot-password",
                                 "/auth/reset-password",
-                                "/auth/internal/**"
+                                "/auth/internal/**",
+                                "/auth/users/*/public"
                         ).permitAll()
                         // upload and profile/picture require a valid logged-in user
                         .requestMatchers("/auth/upload").authenticated()
                         .requestMatchers("/auth/profile/picture").authenticated()
+                        // reports — any logged-in user can submit; only admin can list
+                        .requestMatchers(HttpMethod.POST, "/auth/reports").hasAnyRole("CUSTOMER", "WORKER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/auth/reports").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter,

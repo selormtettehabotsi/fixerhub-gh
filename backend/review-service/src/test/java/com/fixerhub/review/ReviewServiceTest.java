@@ -29,23 +29,18 @@ public class ReviewServiceTest {
 
     @Test
     void getAverageRating_returnsCorrectAverage() {
-        List<Review> reviews = List.of(
-                Review.builder().id(1L).workerId(1L).rating(4).build(),
-                Review.builder().id(2L).workerId(1L).rating(5).build(),
-                Review.builder().id(3L).workerId(1L).rating(3).build()
-        );
-
-        when(reviewRepository.findByWorkerId(1L)).thenReturn(reviews);
+        // M2: averaging now happens in SQL — the repository aggregate is the contract
+        when(reviewRepository.averageRatingByWorkerId(1L)).thenReturn(4.0);
 
         double avg = reviewService.getAverageRating(1L);
 
         assertEquals(4.0, avg);
-        verify(reviewRepository, times(1)).findByWorkerId(1L);
+        verify(reviewRepository, times(1)).averageRatingByWorkerId(1L);
     }
 
     @Test
     void getAverageRating_returnsZeroWhenNoReviews() {
-        when(reviewRepository.findByWorkerId(1L)).thenReturn(List.of());
+        when(reviewRepository.averageRatingByWorkerId(1L)).thenReturn(0.0);
 
         double avg = reviewService.getAverageRating(1L);
 

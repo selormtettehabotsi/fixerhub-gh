@@ -29,7 +29,14 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Internal calls from other services — no auth needed
                 .requestMatchers("/payments/internal/**").permitAll()
+                // Only customers can initiate or verify Paystack payments
+                .requestMatchers(org.springframework.http.HttpMethod.GET,  "/payments/booking/*/pay-url").hasRole("CUSTOMER")
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/payments/booking/*/verify").hasRole("CUSTOMER")
+                // Workers can view their own payment summaries/history
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/payments/worker/**").hasAnyRole("WORKER", "ADMIN")
+                // Everything else just requires authentication
                 .requestMatchers("/payments/**").authenticated()
                 .anyRequest().authenticated()
             )

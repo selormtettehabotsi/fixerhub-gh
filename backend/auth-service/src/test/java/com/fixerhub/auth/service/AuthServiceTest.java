@@ -5,13 +5,16 @@ import com.fixerhub.auth.dto.AuthResponse;
 import com.fixerhub.auth.dto.LoginRequest;
 import com.fixerhub.auth.dto.RegisterRequest;
 import com.fixerhub.auth.model.User;
+import com.fixerhub.auth.repository.RefreshTokenRepository;
 import com.fixerhub.auth.repository.UserRepository;
+import com.fixerhub.auth.service.EmailService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.Optional;
 
@@ -27,10 +30,19 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
     private JwtConfig jwtConfig;
+
+    @Mock
+    private RestTemplate restTemplate;
+
+    @Mock
+    private EmailService emailService;
 
     @InjectMocks
     private AuthService authService;
@@ -47,7 +59,7 @@ class AuthServiceTest {
         when(userRepository.findByEmail("kelvin@test.com")).thenReturn(Optional.empty());
         when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
-        when(jwtConfig.generateToken(anyString(), anyString())).thenReturn("mock-jwt-token");
+        when(jwtConfig.generateToken(anyString(), anyString(), any())).thenReturn("mock-jwt-token");
 
         AuthResponse response = authService.register(request);
 
@@ -116,7 +128,7 @@ class AuthServiceTest {
 
         when(userRepository.findByEmail("kelvin@test.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secure123", "encodedPassword")).thenReturn(true);
-        when(jwtConfig.generateToken(anyString(), anyString())).thenReturn("mock-jwt-token");
+        when(jwtConfig.generateToken(anyString(), anyString(), any())).thenReturn("mock-jwt-token");
 
         AuthResponse response = authService.login(request);
 

@@ -1,5 +1,6 @@
-version: '3.8'
 services:
+  # ─── Infrastructure (default profile — `docker compose up -d` starts only these) ───
+
   postgres:
     image: postgres:15
     environment:
@@ -30,8 +31,111 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # D2: dual listeners — containers use kafka:29092, host (IntelliJ) uses localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # ─── Application services (D1) ──────────────────────────────────────────────
+  # Start the full stack with:  docker compose --profile app up -d --build
+  # (Don't run these while the same services are running from IntelliJ — port clashes.)
+
+  eureka-server:
+    build: { context: ./backend, args: { MODULE: eureka-server } }
+    profiles: [app]
+    ports:
+      - "8761:8761"
+
+  api-gateway:
+    build: { context: ./backend, args: { MODULE: api-gateway } }
+    profiles: [app]
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment: &eureka-env
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFERIPADDRESS: "true"
+      REDIS_HOST: redis
+    depends_on: [eureka-server, redis]
+
+  auth-service:
+    build: { context: ./backend, args: { MODULE: auth-service } }
+    profiles: [app]
+    ports:
+      - "8081:8081"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+    depends_on: [eureka-server, postgres]
+
+  worker-service:
+    build: { context: ./backend, args: { MODULE: worker-service } }
+    profiles: [app]
+    ports:
+      - "8082:8082"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+    depends_on: [eureka-server, postgres, redis]
+
+  booking-service:
+    build: { context: ./backend, args: { MODULE: booking-service } }
+    profiles: [app]
+    ports:
+      - "8083:8083"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on: [eureka-server, postgres, kafka]
+
+  payment-service:
+    build: { context: ./backend, args: { MODULE: payment-service } }
+    profiles: [app]
+    ports:
+      - "8084:8084"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on: [eureka-server, postgres, kafka]
+
+  review-service:
+    build: { context: ./backend, args: { MODULE: review-service } }
+    profiles: [app]
+    ports:
+      - "8085:8085"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+    depends_on: [eureka-server, postgres]
+
+  notification-service:
+    build: { context: ./backend, args: { MODULE: notification-service } }
+    profiles: [app]
+    ports:
+      - "8086:8086"
+    env_file: .env
+    environment:
+      <<: *eureka-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on: [eureka-server, kafka]
+
+  admin-service:
+    build: { context: ./backend, args: { MODULE: admin-service } }
+    profiles: [app]
+    ports:
+      - "8087:8087"
+    env_file: .env
+    environment: *eureka-env
+    depends_on: [eureka-server]
 
 volumes:
   postgres_data:

@@ -23,6 +23,20 @@ export default function WorkerLayout() {
           }}
         />
         <Tabs.Screen
+          name="earnings"
+          options={{
+            title: 'Earnings',
+            tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="chats"
+          options={{
+            title: 'Chat',
+            tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: 'Profile',

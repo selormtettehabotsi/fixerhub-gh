@@ -27,6 +27,8 @@ public class User {
     private String profilePicture;
     private String resetOtp;
     private LocalDateTime otpExpiresAt;
+    /** SECURITY (N3): failed reset-OTP attempts — OTP is invalidated after 5. */
+    private Integer otpAttempts;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

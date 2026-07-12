@@ -1,11 +1,31 @@
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { TouchableOpacity } from 'react-native';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { Ionicons } from '@expo/vector-icons';
+import { UnreadProvider } from '../src/context/UnreadContext';
 
 SplashScreen.preventAutoHideAsync();
+
+// Custom back button — just the chevron, no text label
+function BackButton() {
+  return (
+    <TouchableOpacity onPress={() => router.back()} style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+      <Ionicons name="chevron-back" size={26} color="#ffffff" />
+    </TouchableOpacity>
+  );
+}
+
+// Shared header style for all visible screens
+const HEADER_STYLE = {
+  headerStyle: { backgroundColor: '#a33900' },
+  headerTintColor: '#ffffff',
+  headerBackTitle: '',
+  headerLeft: () => <BackButton />,
+};
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -26,18 +46,24 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <>
+    <UnreadProvider>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, headerBackTitle: '' }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(customer)" />
         <Stack.Screen name="(worker)" />
         <Stack.Screen name="(admin)" />
-        <Stack.Screen name="worker/[id]" options={{ headerShown: true, title: 'Worker Profile', headerStyle: { backgroundColor: '#a33900' }, headerTintColor: '#ffffff' }} />
-        <Stack.Screen name="booking/confirm" options={{ headerShown: true, title: 'Confirm Booking', headerStyle: { backgroundColor: '#a33900' }, headerTintColor: '#ffffff' }} />
+        <Stack.Screen name="worker/[id]"      options={{ headerShown: true, title: 'Worker Profile',    ...HEADER_STYLE }} />
+        <Stack.Screen name="worker/portfolio" options={{ headerShown: true, title: 'Portfolio',          ...HEADER_STYLE }} />
+        <Stack.Screen name="booking/confirm"  options={{ headerShown: true, title: 'Confirm Booking',   ...HEADER_STYLE }} />
         <Stack.Screen name="booking/confirmed" options={{ headerShown: false }} />
+        <Stack.Screen name="booking/[id]"     options={{ headerShown: true, title: 'Booking Details',   ...HEADER_STYLE }} />
+        <Stack.Screen name="chat/[bookingId]" options={{ headerShown: true, title: 'Chat',              ...HEADER_STYLE }} />
+        <Stack.Screen name="help"             options={{ headerShown: false }} />
+        <Stack.Screen name="report"           options={{ headerShown: false }} />
+        <Stack.Screen name="payment/receipt"  options={{ headerShown: false }} />
       </Stack>
-    </>
+    </UnreadProvider>
   );
 }

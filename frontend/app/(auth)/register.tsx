@@ -50,8 +50,11 @@ export default function RegisterScreen() {
         location: location.trim(),
         ...(role === 'WORKER' ? { skill } : {}),
       });
-      await AsyncStorage.multiSet([
+      // SECURITY (M1): tokens go to the keychain via tokenStorage, not AsyncStorage
+      const tokenStorage = await import('../../src/utils/tokenStorage');
+      await tokenStorage.multiSet([
         ['token', data.token],
+        ['refreshToken', data.refreshToken ?? ''],
         ['role', data.role],
         ['userId', String(data.userId)],
         ['name', data.name ?? name.trim()],
@@ -157,7 +160,7 @@ export default function RegisterScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.loginLink}>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/login')} style={styles.loginLink}>
             <Text style={styles.loginLinkText}>
               Already have an account? <Text style={styles.loginLinkBold}>Login</Text>
             </Text>

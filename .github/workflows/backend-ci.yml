@@ -25,14 +25,17 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build and verify all modules
+      # M4: single verify step — tests run as part of the build, so a test
+      # failure fails the workflow (previously -DskipTests masked the build step).
+      # D5: values come from GitHub Actions secrets (Settings → Secrets and
+      # variables → Actions). The || fallbacks are throwaway CI-only values so
+      # the build still works on forks without secrets — they are never used
+      # outside this workflow and must never appear in real configuration.
+      - name: Build, test and verify all modules
         working-directory: backend
-        run: mvn clean verify -DskipTests
-
-      - name: Run tests
-        working-directory: backend
-        run: mvn test
+        run: mvn clean verify
         env:
-          POSTGRES_USER: fixerhub
-          POSTGRES_PASSWORD: fixerhub123
-          JWT_SECRET: test-secret-key-must-be-at-least-256-bits-long
+          POSTGRES_USER: ${{ secrets.CI_POSTGRES_USER || 'ci_user' }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'ci-only-throwaway-password' }}
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-only-jwt-secret-not-used-anywhere-real-0000' }}
+          GATEWAY_SECRET: ${{ secrets.CI_GATEWAY_SECRET || 'ci-only-gateway-secret-not-used-anywhere-real' }}

@@ -10,15 +10,43 @@ spring:
     password: ${POSTGRES_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # D3: Flyway owns the schema; Hibernate only verifies it
     show-sql: false
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0   # baseline below V1 so V1 runs even on a non-empty shared schema
+    table: flyway_history_booking
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        # Fail fast when Kafka is unreachable — don't block the HTTP request for 60 s.
+        # Our try-catch in BookingEventPublisher catches the TimeoutException
+        # and logs a warning, so the status update still succeeds without Kafka.
+        max.block.ms: 3000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
 
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+gateway:
+  secret: ${GATEWAY_SECRET}
+
+# SECURITY (N1): booking-service validates JWTs itself for WebSocket connections
+# (STOMP CONNECT), since the gateway's signed headers can't ride the WS upgrade.
+jwt:
+  secret: ${JWT_SECRET}

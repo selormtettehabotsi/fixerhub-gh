@@ -34,8 +34,11 @@ export default function LoginScreen() {
     setError(null);
     try {
       const data = await login({ email: email.trim(), password });
-      await AsyncStorage.multiSet([
+      // SECURITY (M1): tokens go to the keychain via tokenStorage, not AsyncStorage
+      const tokenStorage = await import('../../src/utils/tokenStorage');
+      await tokenStorage.multiSet([
         ['token', data.token],
+        ['refreshToken', data.refreshToken ?? ''],
         ['role', data.role],
         ['userId', String(data.userId)],
         ['name', data.name ?? ''],
@@ -44,17 +47,22 @@ export default function LoginScreen() {
         ['profilePicture', data.profilePicture ?? ''],
       ]);
 
-      // Register for push notifications (only in development builds, not Expo Go)
-      try {
-        const Notifications = await import('expo-notifications');
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status === 'granted') {
-          const tokenData = await Notifications.getExpoPushTokenAsync();
-          await AsyncStorage.setItem('fcmToken', tokenData.data);
+      // Register for push notifications in the background — don't block navigation
+      import('expo-notifications').then(async (Notifications) => {
+        try {
+          const { status } = await Notifications.requestPermissionsAsync();
+          if (status === 'granted') {
+            const Constants = (await import('expo-constants')).default;
+            const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+            const tokenData = await Notifications.getExpoPushTokenAsync(
+              projectId ? { projectId } : undefined
+            );
+            await AsyncStorage.setItem('fcmToken', tokenData.data);
+          }
+        } catch {
+          // Notifications not supported in Expo Go — proceed silently
         }
-      } catch {
-        // Notifications not supported in Expo Go — proceed silently
-      }
+      }).catch(() => {});
 
       switch (data.role) {
         case 'WORKER':
@@ -157,7 +165,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.registerLink}>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/register')} style={styles.registerLink}>
             <Text style={styles.registerLinkText}>
               Don't have an account? <Text style={styles.registerLinkBold}>Register</Text>
             </Text>

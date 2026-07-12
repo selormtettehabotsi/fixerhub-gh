@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
 import { pickAndUploadImage } from '../../src/hooks/useImageUpload';
 import client from '../../src/api/client';
+import { formatUserId } from '../../src/utils/formatId';
 
 export default function AdminProfileScreen() {
   const [name, setName] = useState('');
@@ -53,7 +54,7 @@ export default function AdminProfileScreen() {
     setUploading(true);
     try {
       const url = await pickAndUploadImage('profiles');
-      await client.put('/auth/profile/picture', { url, email });
+      await client.put('/auth/profile/picture', { url });
       await AsyncStorage.setItem('profilePicture', url);
       setProfilePicture(url);
     } catch (err: any) {
@@ -66,7 +67,7 @@ export default function AdminProfileScreen() {
   async function removePhoto() {
     setUploading(true);
     try {
-      await client.put('/auth/profile/picture', { url: '', email });
+      await client.put('/auth/profile/picture', { url: '' });
       await AsyncStorage.setItem('profilePicture', '');
       setProfilePicture('');
     } catch (err: any) {
@@ -77,7 +78,11 @@ export default function AdminProfileScreen() {
   }
 
   async function handleLogout() {
-    await AsyncStorage.multiRemove(['token', 'role', 'userId', 'name', 'email', 'phone', 'profilePicture']);
+    // TOKENS (H6/M1): revoke the refresh token server-side, clear keychain + storage
+    const { logoutServer } = await import('../../src/api/auth');
+    const tokenStorage = await import('../../src/utils/tokenStorage');
+    await logoutServer(await tokenStorage.getItem('refreshToken'));
+    await tokenStorage.multiRemove(['token', 'refreshToken', 'role', 'userId', 'name', 'email', 'phone', 'profilePicture']);
     router.replace('/(auth)/welcome');
   }
 
@@ -115,7 +120,7 @@ export default function AdminProfileScreen() {
         <View style={styles.infoSection}>
           <InfoRow iconName="mail-outline" label="Email" value={email || '—'} />
           <InfoRow iconName="call-outline" label="Phone" value={phone || '—'} />
-          <InfoRow iconName="finger-print-outline" label="Admin ID" value={userId || '—'} />
+          <InfoRow iconName="finger-print-outline" label="Admin ID" value={userId ? formatUserId(userId) : '—'} />
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>

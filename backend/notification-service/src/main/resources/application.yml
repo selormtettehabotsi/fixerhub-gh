@@ -26,3 +26,12 @@ africastalking:
 # Firebase FCM
 firebase:
   service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

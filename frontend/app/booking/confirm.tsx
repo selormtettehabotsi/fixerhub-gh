@@ -19,30 +19,105 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
 import { createBooking } from '../../src/api/bookings';
-import { pickAndUploadImage, takeAndUploadPhoto } from '../../src/hooks/useImageUpload';
+import { pickAndUploadImage, takeAndUploadPhoto, pickAndUploadVideo } from '../../src/hooks/useImageUpload';
+import { cloudinaryThumb } from '../../src/utils/imageUrl';
+import { useLocation } from '../../src/hooks/useLocation';
 
 const SERVICES = ['Plumbing', 'Electrical', 'Carpentry', 'Painting', 'Cleaning', 'Welding', 'Mason', 'General Repair'];
 
+const MAX_MEDIA = 5;
+
+interface MediaItem {
+  url: string;
+  type: 'image' | 'video';
+}
+
 export default function ConfirmBookingScreen() {
-  const { workerId, workerName, skill } = useLocalSearchParams<{
+  const { workerId, workerName, skill, workerPicture, prefillServiceType, prefillNotes, prefillPhone } = useLocalSearchParams<{
     workerId: string;
     workerName: string;
     skill: string;
+    workerPicture?: string;
+    prefillServiceType?: string;
+    prefillNotes?: string;
+    prefillPhone?: string;
   }>();
 
-  const [serviceType, setServiceType] = useState(skill ?? 'General Repair');
+  // JOB LOCATION: the customer's position when booking = where the job is
+  const { latitude: jobLat, longitude: jobLng } = useLocation();
+
+  const [serviceType, setServiceType] = useState(prefillServiceType ?? skill ?? 'General Repair');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(prefillNotes ?? '');
   const [phone, setPhone] = useState('');
-  const [bookingImage, setBookingImage] = useState('');
+  const [bookingMedia, setBookingMedia] = useState<MediaItem[]>([]);
   const [imageUploading, setImageUploading] = useState(false);
+  const [pricingStyle, setPricingStyle] = useState<'FIXED' | 'NEGOTIABLE' | 'INSPECTION'>('NEGOTIABLE');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem('phone').then((p) => { if (p) setPhone(p); });
+    if (prefillPhone) {
+      setPhone(prefillPhone);
+    } else {
+      AsyncStorage.getItem('phone').then((p) => { if (p) setPhone(p); });
+    }
   }, []);
+
+  const hasVideo = bookingMedia.some((m) => m.type === 'video');
+
+  async function addPhoto() {
+    if (bookingMedia.length >= MAX_MEDIA) return;
+    Alert.alert('Add Photo', 'Choose source', [
+      {
+        text: 'Camera',
+        onPress: async () => {
+          setImageUploading(true);
+          try {
+            const url = await takeAndUploadPhoto('bookings');
+            setBookingMedia((prev) => [...prev, { url, type: 'image' }]);
+          } catch (e: any) {
+            if (!e.message?.includes('No photo')) Alert.alert('Error', e.message);
+          } finally {
+            setImageUploading(false);
+          }
+        },
+      },
+      {
+        text: 'Library',
+        onPress: async () => {
+          setImageUploading(true);
+          try {
+            const url = await pickAndUploadImage('bookings');
+            setBookingMedia((prev) => [...prev, { url, type: 'image' }]);
+          } catch (e: any) {
+            if (!e.message?.includes('No image')) Alert.alert('Error', e.message);
+          } finally {
+            setImageUploading(false);
+          }
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function addVideo() {
+    if (bookingMedia.length >= MAX_MEDIA || hasVideo) return;
+    setImageUploading(true);
+    try {
+      const url = await pickAndUploadVideo('bookings');
+      setBookingMedia((prev) => [...prev, { url, type: 'video' }]);
+    } catch (e: any) {
+      if (!e.message?.includes('No video')) Alert.alert('Error', e.message);
+    } finally {
+      setImageUploading(false);
+    }
+  }
+
+  function removeMedia(index: number) {
+    setBookingMedia((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function handleConfirm() {
     const min = Number(minAmount);
@@ -71,16 +146,23 @@ export default function ConfirmBookingScreen() {
     setLoading(true);
     setError(null);
     try {
+      const mediaUrls = bookingMedia.map((m) => m.url);
       const booking = await createBooking({
         customerId: Number(userId),
         workerId: Number(workerId),
+        workerName: workerName || undefined,
         serviceType,
         amount: min,
         minAmount: min,
         maxAmount: max,
         notes: notes.trim() || undefined,
         customerPhone: phone.trim(),
-        bookingImage: bookingImage || undefined,
+        // JOB LOCATION: lets the worker see where the job is on the map
+        customerLat: jobLat ?? undefined,
+        customerLng: jobLng ?? undefined,
+        bookingImages: mediaUrls,
+        bookingImage: mediaUrls[0] ?? undefined,
+        pricingStyle,
       });
       router.replace({
         pathname: '/booking/confirmed',
@@ -98,11 +180,15 @@ export default function ConfirmBookingScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.workerSummary}>
-            <View style={styles.workerAvatar}>
-              <Text style={styles.workerAvatarText}>
-                {workerName ? workerName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
-              </Text>
-            </View>
+            {workerPicture ? (
+              <Image source={{ uri: cloudinaryThumb(workerPicture, 64) }} style={styles.workerAvatarImg} />
+            ) : (
+              <View style={styles.workerAvatar}>
+                <Text style={styles.workerAvatarText}>
+                  {workerName ? workerName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
+                </Text>
+              </View>
+            )}
             <View>
               <Text style={styles.workerSummaryName}>{workerName ?? 'Worker'}</Text>
               <Text style={styles.workerSummarySkill}>{skill ?? 'Service'}</Text>
@@ -163,6 +249,30 @@ export default function ConfirmBookingScreen() {
             </View>
 
             <View style={styles.inputGroup}>
+              <Text style={styles.label}>Pricing Arrangement</Text>
+              {([
+                { key: 'FIXED',       label: 'Fixed Rate',             desc: 'Price is set upfront' },
+                { key: 'NEGOTIABLE',  label: 'Negotiable',             desc: "Open to discussion" },
+                { key: 'INSPECTION',  label: 'Needs Inspection First', desc: 'Worker will quote after seeing the job' },
+              ] as { key: 'FIXED' | 'NEGOTIABLE' | 'INSPECTION'; label: string; desc: string }[]).map((opt) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.pricingRow, pricingStyle === opt.key && styles.pricingRowActive]}
+                  onPress={() => setPricingStyle(opt.key)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.radioCircle, pricingStyle === opt.key && styles.radioCircleActive]}>
+                    {pricingStyle === opt.key && <View style={styles.radioDot} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.pricingLabel, pricingStyle === opt.key && styles.pricingLabelActive]}>{opt.label}</Text>
+                    <Text style={styles.pricingDesc}>{opt.desc}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.inputGroup}>
               <Text style={styles.label}>Your Phone</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons name="call-outline" size={18} color={Colors.outline} style={styles.inputIcon} />
@@ -178,42 +288,47 @@ export default function ConfirmBookingScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Job Photo (optional)</Text>
-              <TouchableOpacity
-                style={styles.photoBtn}
-                activeOpacity={0.8}
-                onPress={() => Alert.alert('Add Photo', 'Choose source', [
-                  { text: 'Camera', onPress: async () => {
-                    setImageUploading(true);
-                    try { setBookingImage(await takeAndUploadPhoto('bookings')); }
-                    catch (e: any) { Alert.alert('Error', e.message); }
-                    finally { setImageUploading(false); }
-                  }},
-                  { text: 'Library', onPress: async () => {
-                    setImageUploading(true);
-                    try { setBookingImage(await pickAndUploadImage('bookings')); }
-                    catch (e: any) { Alert.alert('Error', e.message); }
-                    finally { setImageUploading(false); }
-                  }},
-                  { text: 'Cancel', style: 'cancel' },
-                ])}
-              >
-                {imageUploading ? (
-                  <ActivityIndicator color={Colors.primary} />
-                ) : bookingImage ? (
-                  <View style={styles.photoPreviewWrapper}>
-                    <Image source={{ uri: bookingImage }} style={styles.photoPreview} />
-                    <TouchableOpacity style={styles.removePhoto} onPress={() => setBookingImage('')}>
-                      <Ionicons name="close-circle" size={22} color={Colors.error} />
+              <Text style={styles.label}>Job Photos / Video (optional)</Text>
+              <Text style={styles.mediaHint}>Add up to {MAX_MEDIA} photos, or a short video.</Text>
+
+              <View style={styles.mediaGrid}>
+                {bookingMedia.map((item, index) => (
+                  <View key={`${item.url}-${index}`} style={styles.mediaThumbWrapper}>
+                    {item.type === 'image' ? (
+                      <Image source={{ uri: item.url }} style={styles.mediaThumb} />
+                    ) : (
+                      <View style={[styles.mediaThumb, styles.videoThumb]}>
+                        <Ionicons name="play-circle" size={28} color="#fff" />
+                        <Text style={styles.videoThumbLabel}>Video</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeMedia(index)}>
+                      <Ionicons name="close-circle" size={20} color={Colors.error} />
                     </TouchableOpacity>
                   </View>
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <Ionicons name="camera-outline" size={28} color={Colors.outline} />
-                    <Text style={styles.photoPlaceholderText}>Tap to add a photo of the job</Text>
+                ))}
+
+                {imageUploading && (
+                  <View style={[styles.mediaThumb, styles.mediaUploading]}>
+                    <ActivityIndicator color={Colors.primary} />
                   </View>
                 )}
-              </TouchableOpacity>
+              </View>
+
+              <View style={styles.mediaActions}>
+                {bookingMedia.length < MAX_MEDIA && (
+                  <TouchableOpacity style={styles.mediaAddBtn} onPress={addPhoto} disabled={imageUploading} activeOpacity={0.8}>
+                    <Ionicons name="image-outline" size={18} color={Colors.primary} />
+                    <Text style={styles.mediaAddBtnText}>Add Photo</Text>
+                  </TouchableOpacity>
+                )}
+                {!hasVideo && bookingMedia.length < MAX_MEDIA && (
+                  <TouchableOpacity style={styles.mediaAddBtn} onPress={addVideo} disabled={imageUploading} activeOpacity={0.8}>
+                    <Ionicons name="videocam-outline" size={18} color={Colors.primary} />
+                    <Text style={styles.mediaAddBtnText}>Add Video</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
             <View style={styles.inputGroup}>
@@ -267,6 +382,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   workerAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  workerAvatarImg: { width: 56, height: 56, borderRadius: 28 },
   workerAvatarText: { color: Colors.onPrimary, fontSize: 20, fontWeight: '700' },
   workerSummaryName: { fontSize: 18, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
   workerSummarySkill: { fontSize: 17, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', marginTop: 2 },
@@ -303,12 +419,25 @@ const styles = StyleSheet.create({
   rangeInput: { flex: 1 },
   rangeSep: { fontSize: 18, color: Colors.onSurfaceVariant, fontWeight: '600' },
   rangeHint: { fontSize: 13, color: Colors.primary, fontFamily: 'Inter_500Medium', marginTop: 4 },
-  photoBtn: { borderRadius: 10, overflow: 'hidden', backgroundColor: Colors.surfaceContainerHighest, minHeight: 110, justifyContent: 'center' },
-  photoPlaceholder: { alignItems: 'center', justifyContent: 'center', padding: 20, gap: 6 },
-  photoPlaceholderText: { fontSize: 14, color: Colors.outline, fontFamily: 'Inter_400Regular' },
-  photoPreviewWrapper: { position: 'relative' },
-  photoPreview: { width: '100%', height: 180, borderRadius: 10 },
-  removePhoto: { position: 'absolute', top: 6, right: 6 },
+  pricingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: Colors.surfaceContainerHigh, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8 },
+  pricingRowActive: { borderColor: Colors.primary, backgroundColor: 'rgba(98,0,238,0.04)' },
+  radioCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: Colors.outline, alignItems: 'center', justifyContent: 'center' },
+  radioCircleActive: { borderColor: Colors.primary },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
+  pricingLabel: { fontSize: 15, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
+  pricingLabelActive: { color: Colors.primary },
+  pricingDesc: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', marginTop: 2 },
+  mediaHint: { fontSize: 13, color: Colors.outline, fontFamily: 'Inter_400Regular', marginBottom: 4 },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  mediaThumbWrapper: { position: 'relative' },
+  mediaThumb: { width: 80, height: 80, borderRadius: 10, backgroundColor: Colors.surfaceContainerHighest, alignItems: 'center', justifyContent: 'center' },
+  videoThumb: { backgroundColor: '#000', gap: 2 },
+  videoThumbLabel: { color: '#fff', fontSize: 11, fontFamily: 'Inter_500Medium' },
+  mediaUploading: { borderWidth: 1, borderColor: Colors.surfaceContainerHigh },
+  removeMediaBtn: { position: 'absolute', top: -6, right: -6, backgroundColor: Colors.surface, borderRadius: 11 },
+  mediaActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  mediaAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  mediaAddBtnText: { fontSize: 14, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
   stickyBottom: { padding: 16, backgroundColor: Colors.surface },
   confirmBtn: { borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   confirmBtnText: { color: Colors.onPrimary, fontSize: 17, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },

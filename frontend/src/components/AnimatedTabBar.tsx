@@ -1,12 +1,14 @@
 import React from 'react';
 import { Animated, TouchableOpacity, View, Text, StyleSheet, Platform } from 'react-native';
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { BottomTabBarProps } from 'expo-router/node_modules/@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabBar } from '../context/TabBarContext';
+import { useUnread } from '../context/UnreadContext';
 import { Colors } from '../constants/colors';
 
 export default function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { translateY } = useTabBar();
+  const { totalUnread } = useUnread();
 
   return (
     <Animated.View style={[styles.container, { transform: [{ translateY }] }]}>
@@ -23,9 +25,20 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
           if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
         };
 
+        // UNREAD BADGES: WhatsApp-style count on the Chat tab
+        const isChatTab = route.name.toLowerCase().includes('chat');
+        const showBadge = isChatTab && totalUnread > 0;
+
         return (
           <TouchableOpacity key={route.key} style={styles.tab} onPress={onPress} activeOpacity={0.7}>
-            {options.tabBarIcon?.({ focused: isFocused, color, size: 24 })}
+            <View style={styles.iconWrap}>
+              {options.tabBarIcon?.({ focused: isFocused, color, size: 24 })}
+              {showBadge && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
+                </View>
+              )}
+            </View>
             <Text style={[styles.label, { color }]}>{label}</Text>
           </TouchableOpacity>
         );
@@ -55,4 +68,20 @@ const styles = StyleSheet.create({
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   label: { fontSize: 11, fontFamily: 'Inter_500Medium' },
+  iconWrap: { position: 'relative' },
+  badge: {
+    position: 'absolute',
+    top: -5,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceContainerLowest,
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 });

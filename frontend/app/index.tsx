@@ -1,16 +1,16 @@
 import { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../src/constants/colors';
+import * as tokenStorage from '../src/utils/tokenStorage';
 
 export default function SplashScreen() {
   useEffect(() => {
     const timer = setTimeout(async () => {
       const [token, role] = await Promise.all([
-        AsyncStorage.getItem('token'),
-        AsyncStorage.getItem('role'),
+        tokenStorage.getItem('token'),
+        tokenStorage.getItem('role'),
       ]);
 
       if (!token) {

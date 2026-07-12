@@ -34,7 +34,7 @@ const slides: { id: string; iconName: React.ComponentProps<typeof Ionicons>['nam
     id: '3',
     iconName: 'card-outline',
     title: 'Safe & Secure Payments',
-    subtitle: 'Pay via MTN MoMo after the job is done.',
+    subtitle: 'Pay securely via Paystack after the job is done.',
   },
 ];
 
@@ -85,7 +85,7 @@ export default function WelcomeScreen() {
 
       <View style={styles.bottomArea}>
         {isLast ? (
-          <TouchableOpacity onPress={() => router.push('/(auth)/register')} activeOpacity={0.85}>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/register')} activeOpacity={0.85}>
             <LinearGradient
               colors={[Colors.primary, Colors.primaryContainer]}
               start={{ x: 0, y: 0 }}
@@ -108,7 +108,7 @@ export default function WelcomeScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.loginLink}>
+        <TouchableOpacity onPress={() => router.replace('/(auth)/login')} style={styles.loginLink}>
           <Text style={styles.loginLinkText}>Already have an account? <Text style={styles.loginLinkBold}>Login</Text></Text>
         </TouchableOpacity>
       </View>

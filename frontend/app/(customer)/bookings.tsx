@@ -16,11 +16,16 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
-import { getBookingsByCustomer, updateBooking, Booking } from '../../src/api/bookings';
+import { getBookingsByCustomer, updateBooking, acceptQuote, declineQuote, Booking } from '../../src/api/bookings';
+import { cloudinaryThumb } from '../../src/utils/imageUrl';
+
+const HIDDEN_KEY = 'hiddenBookingIds';
+import { formatWorkerId } from '../../src/utils/formatId';
+import RatingPromptModal from '../../src/components/RatingPromptModal';
 import { useTabBar } from '../../src/context/TabBarContext';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -29,6 +34,7 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: Colors.available,
   CANCELLED: Colors.unavailable,
   IN_PROGRESS: Colors.primary,
+  WORKER_ON_THE_WAY: Colors.tertiary,
 };
 
 const SERVICES = ['Plumbing', 'Electrical', 'Carpentry', 'Painting', 'Cleaning', 'Welding', 'Mason', 'General Repair'];
@@ -40,6 +46,7 @@ export default function BookingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [profilePicture, setProfilePicture] = useState('');
   const [userName, setUserName] = useState('');
+  const [myUserId, setMyUserId] = useState<number | null>(null);
 
   const { onScroll } = useTabBar();
   const [editBooking, setEditBooking] = useState<Booking | null>(null);
@@ -50,6 +57,7 @@ export default function BookingsScreen() {
   const [editPhone, setEditPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [ratingBooking, setRatingBooking] = useState<Booking | null>(null);
 
   const loadBookings = useCallback(async () => {
     const [userId, pic, n] = await Promise.all([
@@ -59,12 +67,18 @@ export default function BookingsScreen() {
     ]);
     if (pic) setProfilePicture(pic);
     if (n) setUserName(n);
+    if (userId) setMyUserId(Number(userId));
     if (!userId) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await getBookingsByCustomer(userId);
-      setBookings(data);
+      const [data, hiddenRaw] = await Promise.all([
+        getBookingsByCustomer(userId),
+        AsyncStorage.getItem(HIDDEN_KEY),
+      ]);
+      const hidden: number[] = hiddenRaw ? JSON.parse(hiddenRaw) : [];
+      // Sort ascending by ID so booking numbers are stable (#1 = first ever booking)
+      setBookings([...data].filter((b) => !hidden.includes(b.id)).sort((a, b) => a.id - b.id));
     } catch (err: any) {
       const raw = err?.message ?? err;
       setError(typeof raw === 'string' ? raw : JSON.stringify(raw));
@@ -89,6 +103,24 @@ export default function BookingsScreen() {
     setEditNotes(booking.notes ?? '');
     setEditPhone(booking.customerPhone ?? '');
     setEditError(null);
+  }
+
+  async function handleAcceptQuote(booking: Booking) {
+    try {
+      const updated = await acceptQuote(booking.id);
+      setBookings((prev) => prev.map((b) => b.id === updated.id ? updated : b));
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  }
+
+  async function handleDeclineQuote(booking: Booking) {
+    try {
+      const updated = await declineQuote(booking.id);
+      setBookings((prev) => prev.map((b) => b.id === updated.id ? updated : b));
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
   }
 
   async function handleSaveEdit() {
@@ -140,7 +172,7 @@ export default function BookingsScreen() {
           <Text style={styles.title}>{userName || 'My Bookings'}</Text>
         </View>
         {profilePicture ? (
-          <Image source={{ uri: profilePicture }} style={styles.headerAvatar} />
+          <Image source={{ uri: cloudinaryThumb(profilePicture, 48) }} style={styles.headerAvatar} />
         ) : (
           <View style={styles.headerAvatarPlaceholder}>
             <Text style={styles.headerAvatarText}>
@@ -175,10 +207,13 @@ export default function BookingsScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View style={styles.bookingCard}>
             <View style={styles.bookingHeader}>
-              <Text style={styles.serviceType}>{item.serviceType}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.serviceType}>{item.serviceType}</Text>
+                <Text style={styles.bookingNumLabel}>Booking #{index + 1}</Text>
+              </View>
               <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] ?? Colors.outline }]}>
                 <Text style={styles.statusText}>{item.status}</Text>
               </View>
@@ -186,7 +221,7 @@ export default function BookingsScreen() {
 
             <View style={styles.detailRow}>
               <Ionicons name="person-outline" size={14} color={Colors.outline} />
-              <Text style={styles.bookingDetail}> Worker #{item.workerId}</Text>
+              <Text style={styles.bookingDetail}> Worker {formatWorkerId(item.workerId)}</Text>
             </View>
 
             {item.minAmount != null && item.maxAmount != null ? (
@@ -212,14 +247,87 @@ export default function BookingsScreen() {
               </View>
             )}
 
-            {item.status === 'PENDING' && (
-              <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)} activeOpacity={0.8}>
-                <Ionicons name="pencil-outline" size={14} color={Colors.primary} />
-                <Text style={styles.editBtnText}>Edit Booking</Text>
-              </TouchableOpacity>
+            {/* Secondary actions row (Edit / Book Again) */}
+            {(item.status === 'PENDING' || item.status === 'COMPLETED') && (
+              <View style={styles.actionRow}>
+                {item.status === 'PENDING' && (
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(item)} activeOpacity={0.8}>
+                    <Ionicons name="pencil-outline" size={14} color={Colors.primary} />
+                    <Text style={[styles.actionBtnText, { color: Colors.primary }]}>Edit</Text>
+                  </TouchableOpacity>
+                )}
+                {item.status === 'COMPLETED' && (
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => router.push({
+                      pathname: '/booking/confirm',
+                      params: {
+                        workerId: String(item.workerId),
+                        workerName: item.workerName ?? `Worker #${item.workerId}`,
+                        skill: item.serviceType,
+                        prefillServiceType: item.serviceType,
+                        prefillNotes: item.notes ?? '',
+                        prefillPhone: item.customerPhone ?? '',
+                      },
+                    })}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="repeat-outline" size={14} color={Colors.available} />
+                    <Text style={[styles.actionBtnText, { color: Colors.available }]}>Book Again</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* View Details — full-width primary CTA */}
+            <TouchableOpacity
+              style={styles.viewDetailsBtn}
+              onPress={() => router.push({ pathname: `/booking/${item.id}`, params: { bookingNumber: String(index + 1) } })}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="eye-outline" size={17} color="#fff" />
+              <Text style={styles.viewDetailsBtnText}>View Details</Text>
+            </TouchableOpacity>
+
+            {item.quotedAmount != null && item.quoteStatus === 'PENDING' && (
+              <View style={styles.quoteBox}>
+                <View style={styles.quoteHeader}>
+                  <Ionicons name="pricetag-outline" size={16} color={Colors.warning} />
+                  <Text style={styles.quoteTitle}>Worker Quote: GH₵ {item.quotedAmount}</Text>
+                </View>
+                <View style={styles.quoteActions}>
+                  <TouchableOpacity style={[styles.quoteBtn, { backgroundColor: Colors.available }]} onPress={() => handleAcceptQuote(item)}>
+                    <Text style={styles.quoteBtnText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.quoteBtn, { backgroundColor: Colors.unavailable }]} onPress={() => handleDeclineQuote(item)}>
+                    <Text style={styles.quoteBtnText}>Decline</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {item.quoteStatus === 'ACCEPTED' && (
+              <View style={[styles.quoteStatusBanner, { backgroundColor: Colors.available }]}>
+                <Text style={styles.quoteStatusText}>Quote accepted — GH₵ {item.quotedAmount}</Text>
+              </View>
+            )}
+            {item.quoteStatus === 'DECLINED' && (
+              <View style={[styles.quoteStatusBanner, { backgroundColor: Colors.unavailable }]}>
+                <Text style={styles.quoteStatusText}>Quote declined</Text>
+              </View>
             )}
           </View>
         )}
+      />
+
+      <RatingPromptModal
+        visible={!!ratingBooking}
+        workerName={ratingBooking?.workerName ?? `Worker ${ratingBooking?.workerId}`}
+        bookingId={ratingBooking?.id ?? 0}
+        workerId={ratingBooking?.workerId ?? 0}
+        customerId={myUserId ?? undefined}
+        customerName={userName || undefined}
+        onClose={() => setRatingBooking(null)}
+        onSubmit={() => setRatingBooking(null)}
       />
 
       <Modal visible={!!editBooking} animationType="slide" transparent onRequestClose={() => setEditBooking(null)}>
@@ -330,13 +438,27 @@ const styles = StyleSheet.create({
   list: { padding: 20, paddingTop: 4, paddingBottom: 100 },
   bookingCard: { backgroundColor: Colors.surfaceContainerLowest, borderRadius: 12, padding: 16, marginBottom: 12 },
   bookingHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  serviceType: { fontSize: 16, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', flex: 1 },
+  serviceType: { fontSize: 16, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
+  bookingNumLabel: { fontSize: 12, color: Colors.primary, fontFamily: 'Inter_600SemiBold', fontWeight: '600', marginTop: 2 },
   statusBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
   statusText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   bookingDetail: { fontSize: 14, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
   bookingNotes: { fontSize: 14, color: Colors.onSurface, fontFamily: 'Inter_400Regular', fontStyle: 'italic', marginTop: 6 },
   bookingDate: { fontSize: 13, color: Colors.outline, fontFamily: 'Inter_400Regular' },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 4 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: Colors.surfaceContainerHigh },
+  actionBtnText: { fontSize: 13, fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
+  viewDetailsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12, paddingVertical: 13, borderRadius: 10, backgroundColor: Colors.primary },
+  viewDetailsBtnText: { fontSize: 15, color: '#fff', fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
+  quoteBox: { marginTop: 10, backgroundColor: Colors.surfaceContainerLow, borderRadius: 10, padding: 12, borderLeftWidth: 3, borderLeftColor: Colors.warning },
+  quoteHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  quoteTitle: { fontSize: 14, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
+  quoteActions: { flexDirection: 'row', gap: 10 },
+  quoteBtn: { flex: 1, borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  quoteBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  quoteStatusBanner: { marginTop: 10, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  quoteStatusText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   editBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 6, alignSelf: 'flex-start', backgroundColor: Colors.primaryContainer, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   editBtnText: { color: Colors.primary, fontSize: 13, fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
   errorBox: { margin: 20, backgroundColor: Colors.errorContainer, borderRadius: 10, padding: 16, alignItems: 'center' },
@@ -365,5 +487,5 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 20, marginBottom: 8 },
   saveBtnText: { color: Colors.onPrimary, fontSize: 16, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
   editErrorBox: { backgroundColor: Colors.errorContainer, borderRadius: 8, padding: 10, marginBottom: 8 },
-  editErrorText: { color: Colors.error, fontSize: 14 },
+  editErrorText: { color: Colors.error, fontFamily: 'Inter_400Regular', fontSize: 13 },
 });

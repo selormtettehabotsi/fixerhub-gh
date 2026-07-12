@@ -44,4 +44,28 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> unverifyWorker(@PathVariable Long id) {
         return ResponseEntity.ok(adminService.unverifyWorker(id));
     }
+
+    // ─── KYC Verification Review ─────────────────────────────────────────────
+
+    @GetMapping("/workers/verification/pending")
+    public ResponseEntity<List<Map<String, Object>>> getPendingVerifications() {
+        return ResponseEntity.ok(adminService.getPendingVerifications());
+    }
+
+    @PutMapping("/workers/{id}/verification/approve")
+    public ResponseEntity<Map<String, Object>> approveVerification(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.approveVerification(id));
+    }
+
+    @PutMapping("/workers/{id}/verification/decline")
+    public ResponseEntity<Map<String, Object>> declineVerification(
+            @PathVariable Long id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(adminService.declineVerification(id, body));
+    }
+
+    @PutMapping("/workers/{id}/verification/request-resubmit")
+    public ResponseEntity<Map<String, Object>> requestResubmit(
+            @PathVariable Long id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(adminService.requestResubmit(id, body));
+    }
 }

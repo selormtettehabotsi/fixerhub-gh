@@ -20,11 +20,16 @@ public class AuthFilter implements GatewayFilter {
     @Value("${jwt.secret}")
     private String jwtSecret;
 
+    @Value("${gateway.secret}")
+    private String gatewaySecret;
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
 
-        if (path.startsWith("/auth/")) {
+        // SECURITY (N1): /chat/** now requires auth (removed from the skip list);
+        // /ws/** stays open here because STOMP CONNECT enforces the JWT instead.
+        if (path.startsWith("/auth/") || path.startsWith("/ws/")) {
             return chain.filter(exchange);
         }
 
@@ -42,11 +47,22 @@ public class AuthFilter implements GatewayFilter {
                     .parseClaimsJws(token).getBody();
 
             String role = claims.get("role", String.class);
+            Long userIdClaim = claims.get("userId", Long.class);
+
+            String email    = claims.getSubject();
+            String safeRole = role != null ? role : "";
+            String userId   = userIdClaim != null ? String.valueOf(userIdClaim) : "";
+
+            // SECURITY (C3): sign the forwarded identity headers so downstream
+            // services can reject forged X-User-* headers on direct calls.
+            String signature = GatewaySignature.sign(gatewaySecret, email, safeRole, userId);
 
             ServerWebExchange mutated = exchange.mutate()
                     .request(r -> r
-                            .header("X-User-Email", claims.getSubject())
-                            .header("X-User-Role", role != null ? role : ""))
+                            .header("X-User-Email", email)
+                            .header("X-User-Role", safeRole)
+                            .header("X-User-Id", userId)
+                            .header("X-Gateway-Signature", signature))
                     .build();
 
             return chain.filter(mutated);

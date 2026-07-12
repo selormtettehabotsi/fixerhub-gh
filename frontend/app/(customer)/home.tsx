@@ -4,16 +4,17 @@ import {
   Text,
   TextInput,
   ScrollView,
+  FlatList,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Platform,
   Image,
+  ListRenderItemInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
@@ -22,6 +23,8 @@ import { useLocation } from '../../src/hooks/useLocation';
 import { useTabBar } from '../../src/context/TabBarContext';
 import WorkerCard from '../../src/components/WorkerCard';
 import CategoryCard from '../../src/components/CategoryCard';
+import { conversationId as mkConversationId } from '../../src/utils/formatId';
+import { cloudinaryThumb } from '../../src/utils/imageUrl';
 
 const CATEGORIES = [
   { iconName: 'water-outline', label: 'Plumbing', skill: 'Plumbing' },
@@ -33,6 +36,7 @@ const CATEGORIES = [
 ] as const;
 
 export default function CustomerHome() {
+  const { skill: skillParam } = useLocalSearchParams<{ skill?: string }>();
   const { latitude, longitude, loading: locLoading } = useLocation();
   const { onScroll } = useTabBar();
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -43,40 +47,63 @@ export default function CustomerHome() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [profilePicture, setProfilePicture] = useState('');
+  const [myUserId, setMyUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([AsyncStorage.getItem('name'), AsyncStorage.getItem('profilePicture')]).then(([n, pic]) => {
-      if (n) setName(n);
-      if (pic) setProfilePicture(pic);
-    });
-  }, []);
-
-  const loadWorkers = useCallback(async (lat?: number, lng?: number) => {
-    const useLat = lat ?? latitude ?? 5.6037;
-    const useLng = lng ?? longitude ?? -0.187;
-    setLoading(true);
-    setError(null);
+  const loadWorkers = useCallback(async (silent = false) => {
+    const useLat = latitude ?? 5.6037;
+    const useLng = longitude ?? -0.187;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const data = await getNearbyWorkers(useLat, useLng);
       setWorkers(data);
       setFiltered(data);
+      setError(null);
     } catch (err: any) {
+      if (silent) return; // background refresh failed — keep what we have
       const raw = err?.message ?? err;
       const msg = typeof raw === 'string' ? raw : JSON.stringify(raw);
       setError(msg || 'Failed to load workers');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [latitude, longitude]);
 
+  // Reload name + profile picture every time this tab comes into focus
+  useFocusEffect(useCallback(() => {
+    Promise.all([
+      AsyncStorage.getItem('name'),
+      AsyncStorage.getItem('profilePicture'),
+      AsyncStorage.getItem('userId'),
+    ]).then(([n, pic, uid]) => {
+      if (n) setName(n);
+      if (pic) setProfilePicture(pic);
+      if (uid) setMyUserId(uid);
+    });
+    // FRESHNESS: re-fetch workers on focus so new ratings and distances show
+    // up when returning from a review, booking, or after moving around.
+    loadWorkers();
+    // LIVE DISTANCE: silent background poll while this tab is focused, so
+    // "km away" updates when WORKERS move (their app pushes GPS to the server)
+    // even if this customer stays perfectly still. No spinner, keeps old list
+    // on network hiccups.
+    const interval = setInterval(() => loadWorkers(true), 30000);
+    return () => clearInterval(interval);
+  }, [loadWorkers]));
+
+  // PERF: single effect — fires on mount with the Accra fallback coords built
+  // into loadWorkers, then once more when real GPS coordinates resolve.
+  // (Previously a second mount-effect triggered a redundant duplicate fetch.)
   useEffect(() => {
     loadWorkers();
   }, [loadWorkers]);
 
-  // Load immediately on mount with fallback coords so page isn't blank
+  // When navigated from the Services tab with a skill param, populate the search box
   useEffect(() => {
-    loadWorkers(5.6037, -0.187);
-  }, []);
+    if (skillParam) setSearch(skillParam);
+  }, [skillParam]);
 
   useEffect(() => {
     if (!search.trim()) {
@@ -93,8 +120,6 @@ export default function CustomerHome() {
     setRefreshing(false);
   }
 
-
-
   function filterBySkill(skill: string) {
     setSearch(skill);
   }
@@ -106,29 +131,47 @@ export default function CustomerHome() {
     return 'Good evening';
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-      >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{greeting()}{name ? `, ${name.split(' ')[0]}` : ''}</Text>
-            <Text style={styles.headerSubtitle}>Find a trusted worker near you</Text>
-          </View>
-          {profilePicture ? (
-            <Image source={{ uri: profilePicture }} style={styles.headerAvatar} />
-          ) : (
-            <TouchableOpacity style={styles.notifBtn}>
-              <Ionicons name="notifications-outline" size={22} color={Colors.onSurface} />
-            </TouchableOpacity>
-          )}
-        </View>
+  // PERF: stable renderItem for the virtualized worker list
+  const renderWorker = useCallback(({ item: w }: ListRenderItemInfo<Worker>) => (
+    <View style={styles.listItem}>
+      <WorkerCard
+        id={w.id}
+        name={w.name}
+        skill={w.skill}
+        rating={w.rating ?? 0}
+        available={w.available}
+        location={w.location}
+        ratePerHour={w.ratePerHour}
+        verified={w.verified}
+        profilePicture={w.profilePicture}
+        distanceKm={w.distanceKm}
+        onPress={() => router.push(`/worker/${w.id}`)}
+        onChat={myUserId ? () => {
+          // Use w.id (worker profile ID) — same key used in bookings
+          const convId = mkConversationId(myUserId, String(w.id));
+          router.push({ pathname: `/chat/${convId}`, params: { otherName: w.name } });
+        } : undefined}
+      />
+    </View>
+  ), [myUserId]);
 
+  const listHeader = (
+    <>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>{greeting()}{name ? `, ${name.split(' ')[0]}` : ''}</Text>
+          <Text style={styles.headerSubtitle}>Find a trusted worker near you</Text>
+        </View>
+        {profilePicture ? (
+          <Image source={{ uri: cloudinaryThumb(profilePicture, 42) }} style={styles.headerAvatar} />
+        ) : (
+          <TouchableOpacity style={styles.notifBtn}>
+            <Ionicons name="notifications-outline" size={22} color={Colors.onSurface} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.searchRow}>
         <View style={styles.searchWrapper}>
           <Ionicons name="search-outline" size={18} color={Colors.outline} style={styles.searchIcon} />
           <TextInput
@@ -144,83 +187,67 @@ export default function CustomerHome() {
             </TouchableOpacity>
           )}
         </View>
+      </View>
 
-        {!locLoading && latitude && longitude && (
-          <View style={styles.mapContainer}>
-            <MapView
-              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-              style={styles.map}
-              initialRegion={{
-                latitude,
-                longitude,
-                latitudeDelta: 0.05,
-                longitudeDelta: 0.05,
-              }}
-            >
-              {workers.filter((w) => w.latitude && w.longitude).map((w) => (
-                <Marker
-                  key={w.id}
-                  coordinate={{ latitude: w.latitude!, longitude: w.longitude! }}
-                  onPress={() => router.push(`/worker/${w.id}`)}
-                >
-                  <View style={styles.markerBubble}>
-                    <Text style={styles.markerText}>{w.name.charAt(0)}</Text>
-                  </View>
-                </Marker>
-              ))}
-            </MapView>
+      {/* Home map removed — live tracking now lives on the booking screen
+          (Uber-style, per booking) instead of showing static worker pins. */}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Services</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+          {CATEGORIES.map((c) => (
+            <CategoryCard key={c.skill} iconName={c.iconName} label={c.label} onPress={() => filterBySkill(c.skill)} />
+          ))}
+        </ScrollView>
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Nearby Workers</Text>
+          <Text style={styles.sectionCount}>{filtered.length} found</Text>
+        </View>
+
+        {loading && <ActivityIndicator color={Colors.primary} style={styles.loader} />}
+
+        {error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={() => loadWorkers()} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Services</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {CATEGORIES.map((c) => (
-              <CategoryCard key={c.skill} iconName={c.iconName} label={c.label} onPress={() => filterBySkill(c.skill)} />
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Nearby Workers</Text>
-            <Text style={styles.sectionCount}>{filtered.length} found</Text>
+        {!loading && !error && filtered.length === 0 && (
+          <View style={styles.emptyBox}>
+            <Ionicons name="search-outline" size={48} color={Colors.outline} style={styles.emptyIcon} />
+            <Text style={styles.emptyText}>No workers found nearby.</Text>
+            <Text style={styles.emptySubtext}>Try a different search or expand your area.</Text>
           </View>
+        )}
+      </View>
+    </>
+  );
 
-          {loading && <ActivityIndicator color={Colors.primary} style={styles.loader} />}
-
-          {error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity onPress={loadWorkers} style={styles.retryBtn}>
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {!loading && !error && filtered.length === 0 && (
-            <View style={styles.emptyBox}>
-              <Ionicons name="search-outline" size={48} color={Colors.outline} style={styles.emptyIcon} />
-              <Text style={styles.emptyText}>No workers found nearby.</Text>
-              <Text style={styles.emptySubtext}>Try a different search or expand your area.</Text>
-            </View>
-          )}
-
-          {filtered.map((w) => (
-            <WorkerCard
-              key={w.id}
-              id={w.id}
-              name={w.name}
-              skill={w.skill}
-              rating={w.rating ?? 0}
-              available={w.available}
-              location={w.location}
-              ratePerHour={w.ratePerHour}
-              onPress={() => router.push(`/worker/${w.id}`)}
-            />
-          ))}
-        </View>
-      </ScrollView>
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* PERF: FlatList virtualizes the worker list — only visible cards are
+          mounted, instead of every card (and its image) living in memory. */}
+      <FlatList
+        data={filtered}
+        keyExtractor={(w) => String(w.id)}
+        renderItem={renderWorker}
+        ListHeaderComponent={listHeader}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        onScroll={onScroll}
+        scrollEventThrottle={48}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+      />
     </SafeAreaView>
   );
 }
@@ -232,14 +259,12 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 17, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', marginTop: 2 },
   notifBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
   headerAvatar: { width: 42, height: 42, borderRadius: 21 },
-  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHighest, borderRadius: 12, marginHorizontal: 20, marginBottom: 16, paddingHorizontal: 14, height: 48 },
+  searchRow: { marginHorizontal: 20, marginBottom: 8 },
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHighest, borderRadius: 12, paddingHorizontal: 14, height: 48 },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 16, color: Colors.onSurface, fontFamily: 'Inter_400Regular' },
-  mapContainer: { marginHorizontal: 20, borderRadius: 16, overflow: 'hidden', marginBottom: 16, height: 200 },
-  map: { flex: 1 },
-  markerBubble: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.onPrimary },
-  markerText: { color: Colors.onPrimary, fontWeight: '700', fontSize: 16 },
   section: { paddingHorizontal: 20, marginBottom: 20 },
+  listItem: { paddingHorizontal: 20 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 12 },
   sectionCount: { fontSize: 17, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },

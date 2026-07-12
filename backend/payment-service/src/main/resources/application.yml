@@ -10,8 +10,12 @@ spring:
     password: ${POSTGRES_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # D3: Flyway owns the schema; Hibernate only verifies it
     show-sql: false
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0   # baseline below V1 so V1 runs even on a non-empty shared schema
+    table: flyway_history_payment
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
@@ -28,15 +32,23 @@ eureka:
     service-url:
       defaultZone: http://localhost:8761/eureka
 
-# MTN MoMo Collections API (Sandbox)
 fixerhub:
   commission-rate: ${COMMISSION_RATE}
 
-momo:
-  base-url: ${MOMO_BASE_URL}
-  subscription-key: ${MOMO_SUBSCRIPTION_KEY}
-  api-user: ${MOMO_API_USER}
-  api-key: ${MOMO_API_KEY}
-  environment: ${MOMO_ENVIRONMENT}
-  callback-url: ${MOMO_CALLBACK_URL}
-  currency: ${MOMO_CURRENCY}
+# Paystack payment gateway
+paystack:
+  secret-key: ${PAYSTACK_SECRET_KEY}
+  base-url: ${PAYSTACK_BASE_URL:https://api.paystack.co}
+  callback-url: ${PAYSTACK_CALLBACK_URL:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+gateway:
+  secret: ${GATEWAY_SECRET}
