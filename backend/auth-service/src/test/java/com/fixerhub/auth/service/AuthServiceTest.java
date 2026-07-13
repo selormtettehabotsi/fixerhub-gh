@@ -42,6 +42,9 @@ class AuthServiceTest {
     private RestTemplate restTemplate;
 
     @Mock
+    private RestTemplate externalRestTemplate;
+
+    @Mock
     private EmailService emailService;
 
     @InjectMocks

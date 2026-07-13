@@ -7,6 +7,7 @@ import { useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, Plus
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Ionicons } from '@expo/vector-icons';
 import { UnreadProvider } from '../src/context/UnreadContext';
+import { Colors } from '../src/constants/colors';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -19,9 +20,10 @@ function BackButton() {
   );
 }
 
-// Shared header style for all visible screens
+// Shared header style — Colors is already resolved (saved preference is read
+// synchronously in constants/colors.ts before any module builds styles).
 const HEADER_STYLE = {
-  headerStyle: { backgroundColor: '#a33900' },
+  headerStyle: { backgroundColor: Colors.primary },
   headerTintColor: '#ffffff',
   headerBackTitle: '',
   headerLeft: () => <BackButton />,

@@ -13,6 +13,8 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByBookingId(Long bookingId);
+    /** WEBHOOK: Paystack identifies transactions by reference. */
+    Optional<Payment> findByPaystackReference(String paystackReference);
     List<Payment> findByCustomerId(Long customerId);
     List<Payment> findByWorkerId(Long workerId);
 
@@ -46,4 +48,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     @Query("SELECT COALESCE(SUM(p.workerAmount), 0) FROM Payment p")
     java.math.BigDecimal sumWorkerPayouts();
+
+    /** ENGAGEMENT: per-worker earnings since a date — [workerId, totalWorkerAmount, jobCount]. */
+    @Query("SELECT p.workerId, COALESCE(SUM(p.workerAmount), 0), COUNT(p) FROM Payment p " +
+           "WHERE p.status = :status AND p.createdAt >= :since AND p.workerId IS NOT NULL " +
+           "GROUP BY p.workerId")
+    List<Object[]> earningsByWorkerSince(@Param("since") java.time.LocalDateTime since,
+                                         @Param("status") PaymentStatus status);
 }

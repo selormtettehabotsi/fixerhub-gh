@@ -39,7 +39,8 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtConfig jwtConfig;
-    private final RestTemplate restTemplate;
+    private final RestTemplate restTemplate;           // @LoadBalanced — internal service calls only
+    private final RestTemplate externalRestTemplate;   // plain — external APIs (African's Talking)
     private final EmailService emailService;
 
     @Value("${africastalking.username}")
@@ -78,12 +79,21 @@ public class AuthService {
             throw new BadRequestException("Email already in use");
         }
 
+        // REFERRALS: resolve the inviter's code (invalid codes are ignored, not fatal)
+        Long referredBy = null;
+        if (request.getReferralCode() != null && !request.getReferralCode().isBlank()) {
+            referredBy = userRepository.findByReferralCode(request.getReferralCode().trim().toUpperCase())
+                    .map(User::getId).orElse(null);
+        }
+
         User user = User.builder()
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(password))
                 .role(request.getRole())
                 .name(request.getName())
                 .phone(request.getPhone())
+                .referralCode(generateReferralCode())
+                .referredBy(referredBy)
                 .build();
 
         userRepository.save(user);
@@ -127,6 +137,262 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new UnauthorizedException("Invalid credentials");
         }
+        return buildAuthResponse(user);
+    }
+
+    // ------------------------------------------------------------------ //
+    //  EDIT PROFILE
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Update the logged-in user's name / email / phone.
+     * Email is the JWT identity ("sub"), so when it changes we revoke every
+     * refresh token and return a fresh token pair — the client swaps them in
+     * and the session continues seamlessly. Worker contact info is synced to
+     * worker-service (best effort).
+     */
+    @Transactional
+    public AuthResponse updateProfile(String currentEmail, String name, String newEmail, String phone) {
+        User user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+
+        boolean emailChanged = newEmail != null && !newEmail.isBlank()
+                && !newEmail.trim().equalsIgnoreCase(user.getEmail());
+
+        if (emailChanged) {
+            String normalized = newEmail.trim().toLowerCase();
+            if (!normalized.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+                throw new BadRequestException("Please enter a valid email address");
+            }
+            if (userRepository.findByEmail(normalized).isPresent()) {
+                throw new BadRequestException("That email is already in use");
+            }
+            user.setEmail(normalized);
+            user.setEmailVerified(false); // new address must be re-verified
+        }
+
+        if (phone != null && !phone.isBlank() && !phone.trim().equals(user.getPhone())) {
+            String trimmed = phone.trim();
+            userRepository.findByPhone(trimmed)
+                    .filter(other -> !other.getId().equals(user.getId()))
+                    .ifPresent(other -> {
+                        throw new BadRequestException("That phone number is already in use");
+                    });
+            user.setPhone(trimmed);
+            user.setPhoneVerified(false); // new number must be re-verified
+        }
+
+        if (name != null && !name.isBlank()) {
+            user.setName(name.trim());
+        }
+
+        userRepository.save(user);
+
+        // Keep the worker profile's public contact info in sync.
+        if (user.getRole() == User.Role.WORKER) {
+            try {
+                restTemplate.put(
+                        "http://worker-service/workers/internal/by-user/" + user.getId() + "/contact",
+                        Map.of(
+                                "name", user.getName() == null ? "" : user.getName(),
+                                "email", user.getEmail(),
+                                "phone", user.getPhone() == null ? "" : user.getPhone()));
+            } catch (Exception e) {
+                log.warn("Could not sync worker profile contact info for userId={}: {}",
+                        user.getId(), e.getMessage());
+            }
+        }
+
+        if (emailChanged) {
+            refreshTokenRepository.revokeAllForUser(user.getId());
+            return buildAuthResponse(user); // fresh access + refresh tokens
+        }
+
+        return AuthResponse.builder()
+                .role(user.getRole())
+                .userId(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .profilePicture(user.getProfilePicture())
+                .build();
+    }
+
+    // ------------------------------------------------------------------ //
+    //  PUSH TOKENS
+    // ------------------------------------------------------------------ //
+
+    @Transactional
+    public void updateFcmToken(String email, String token) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            user.setFcmToken(token);
+            userRepository.save(user);
+        });
+    }
+
+    public String getFcmToken(Long userId) {
+        return userRepository.findById(userId).map(User::getFcmToken).orElse(null);
+    }
+
+    // ------------------------------------------------------------------ //
+    //  REFERRALS
+    // ------------------------------------------------------------------ //
+
+    private static final String CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
+
+    /** Short, unambiguous, collision-checked share code like FH-4X7K9C. */
+    private String generateReferralCode() {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            StringBuilder sb = new StringBuilder("FH-");
+            for (int i = 0; i < 6; i++) {
+                sb.append(CODE_ALPHABET.charAt(SECURE_RANDOM.nextInt(CODE_ALPHABET.length())));
+            }
+            String code = sb.toString();
+            if (userRepository.findByReferralCode(code).isEmpty()) return code;
+        }
+        throw new IllegalStateException("Could not generate a unique referral code");
+    }
+
+    /** Own referral card data: code (lazily created for pre-referral accounts) + credited count. */
+    @Transactional
+    public Map<String, Object> referralInfo(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        if (user.getReferralCode() == null) {
+            user.setReferralCode(generateReferralCode());
+            userRepository.save(user);
+        }
+        return Map.of(
+                "code", user.getReferralCode(),
+                "count", user.getReferralCount() == null ? 0 : user.getReferralCount());
+    }
+
+    /**
+     * REFERRALS (internal, called by payment-service): the referred user just
+     * completed their FIRST successful payment — credit the referrer once.
+     * Tying the credit to a real payment is the anti-fraud mechanism.
+     */
+    @Transactional
+    public void creditReferrerForFirstPayment(Long payerUserId) {
+        userRepository.findById(payerUserId).ifPresent(payer -> {
+            if (payer.getReferredBy() == null || Boolean.TRUE.equals(payer.getReferralCredited())) return;
+            payer.setReferralCredited(true);
+            userRepository.save(payer);
+            userRepository.findById(payer.getReferredBy()).ifPresent(referrer -> {
+                int count = referrer.getReferralCount() == null ? 0 : referrer.getReferralCount();
+                referrer.setReferralCount(count + 1);
+                userRepository.save(referrer);
+                log.info("Referral credited: user {} (referred by {}) made first payment — referrer count now {}",
+                        payerUserId, referrer.getId(), count + 1);
+            });
+        });
+    }
+
+    // ------------------------------------------------------------------ //
+    //  EMAIL / PHONE VERIFICATION (badge-only)
+    // ------------------------------------------------------------------ //
+
+    /** Send a 6-digit OTP to the user's own email (EMAIL) or phone (PHONE). */
+    @Transactional
+    public Map<String, String> sendVerificationOtp(String email, String channel) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+
+        boolean isEmail = "EMAIL".equalsIgnoreCase(channel);
+        boolean isPhone = "PHONE".equalsIgnoreCase(channel);
+        if (!isEmail && !isPhone) throw new BadRequestException("channel must be EMAIL or PHONE");
+        if (isEmail && Boolean.TRUE.equals(user.getEmailVerified()))
+            throw new BadRequestException("Email is already verified");
+        if (isPhone && Boolean.TRUE.equals(user.getPhoneVerified()))
+            throw new BadRequestException("Phone is already verified");
+        if (isPhone && (user.getPhone() == null || user.getPhone().isBlank()))
+            throw new BadRequestException("Add a phone number to your profile first");
+
+        String otp = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+        user.setVerifyOtp(otp);
+        user.setVerifyOtpChannel(isEmail ? "EMAIL" : "PHONE");
+        user.setVerifyOtpExpiresAt(LocalDateTime.now().plusMinutes(10));
+        user.setVerifyOtpAttempts(0);
+        userRepository.save(user);
+
+        if (isEmail) {
+            emailService.sendVerificationOtp(user.getEmail(), otp);
+        } else {
+            boolean sent = trySendSms(user.getPhone(),
+                    "Your FixerHub verification code is: " + otp + ". Valid for 10 minutes.");
+            if (!sent) throw new BadRequestException("Could not send SMS right now — please try again later");
+        }
+        return Map.of("message", "Verification code sent");
+    }
+
+    /** Confirm the OTP: marks the channel verified. Max 5 wrong guesses. */
+    @Transactional
+    public Map<String, Object> confirmVerification(String email, String channel, String otp) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+
+        if (user.getVerifyOtp() == null || user.getVerifyOtpExpiresAt() == null
+                || !String.valueOf(channel).equalsIgnoreCase(user.getVerifyOtpChannel())) {
+            throw new BadRequestException("No pending verification — request a new code");
+        }
+        if (LocalDateTime.now().isAfter(user.getVerifyOtpExpiresAt())) {
+            clearVerifyOtp(user);
+            throw new BadRequestException("Code expired — request a new one");
+        }
+        int attempts = user.getVerifyOtpAttempts() == null ? 0 : user.getVerifyOtpAttempts();
+        if (attempts >= 5) {
+            clearVerifyOtp(user);
+            throw new BadRequestException("Too many wrong attempts — request a new code");
+        }
+        if (otp == null || !otp.trim().equals(user.getVerifyOtp())) {
+            user.setVerifyOtpAttempts(attempts + 1);
+            userRepository.save(user);
+            throw new BadRequestException("Incorrect code");
+        }
+
+        if ("EMAIL".equalsIgnoreCase(channel)) user.setEmailVerified(true);
+        else user.setPhoneVerified(true);
+        clearVerifyOtp(user);
+
+        return Map.of(
+                "emailVerified", Boolean.TRUE.equals(user.getEmailVerified()),
+                "phoneVerified", Boolean.TRUE.equals(user.getPhoneVerified()));
+    }
+
+    public Map<String, Object> verificationStatus(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        return Map.of(
+                "emailVerified", Boolean.TRUE.equals(user.getEmailVerified()),
+                "phoneVerified", Boolean.TRUE.equals(user.getPhoneVerified()));
+    }
+
+    private void clearVerifyOtp(User user) {
+        user.setVerifyOtp(null);
+        user.setVerifyOtpChannel(null);
+        user.setVerifyOtpExpiresAt(null);
+        user.setVerifyOtpAttempts(null);
+        userRepository.save(user);
+    }
+
+    /**
+     * CHANGE PASSWORD (logged-in): requires the current password. All refresh
+     * tokens are revoked (kills any other device's session) and a fresh token
+     * pair is returned so THIS session continues seamlessly.
+     */
+    @Transactional
+    public AuthResponse changePassword(String email, String currentPassword, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new UnauthorizedException("Current password is incorrect");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new BadRequestException("New password must be at least 6 characters");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        refreshTokenRepository.revokeAllForUser(user.getId());
         return buildAuthResponse(user);
     }
 
@@ -376,7 +642,13 @@ public class AuthService {
             body.add("message", message);
 
             HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(body, headers);
-            restTemplate.postForEntity(atSmsUrl, entity, String.class);
+            // SMS FIX: must use the plain (non-load-balanced) template for external hosts
+            String response = externalRestTemplate.postForEntity(atSmsUrl, entity, String.class).getBody();
+            // AT returns HTTP 201 even for undeliverable numbers — check the recipient status
+            if (response != null && !response.contains("Success") && !response.contains("\"statusCode\":10")) {
+                log.warn("SMS to {} not accepted by African's Talking: {}", phoneNumber, response);
+                return false;
+            }
             log.info("OTP SMS sent to {}", phoneNumber);
             return true;
         } catch (Exception e) {

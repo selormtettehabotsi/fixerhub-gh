@@ -15,6 +15,8 @@ interface WorkerCardProps {
   verified?: boolean;
   profilePicture?: string;
   distanceKm?: number;
+  /** SUBSCRIPTION: "PRO" shows the Pro badge */
+  plan?: string;
   onPress: () => void;
   onChat?: () => void;
 }
@@ -44,6 +46,7 @@ function WorkerCard({
   verified,
   profilePicture,
   distanceKm,
+  plan,
   onPress,
   onChat,
 }: WorkerCardProps) {
@@ -67,7 +70,14 @@ function WorkerCard({
         </View>
 
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>{name}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>{name}</Text>
+            {plan === 'PRO' && (
+              <View style={styles.proBadge}>
+                <Text style={styles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.skill} numberOfLines={1}>{skill}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="star" size={14} color={Colors.starColor} />
@@ -119,6 +129,7 @@ export default React.memo(WorkerCard, (prev, next) =>
   prev.verified === next.verified &&
   prev.profilePicture === next.profilePicture &&
   prev.distanceKm === next.distanceKm &&
+  prev.plan === next.plan &&
   (prev.onChat === undefined) === (next.onChat === undefined)
 );
 
@@ -174,6 +185,14 @@ const styles = StyleSheet.create({
 
   // Info
   info: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  proBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+  },
+  proBadgeText: { color: '#fff', fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 },
   name: {
     fontSize: 16,
     fontWeight: '700',

@@ -62,7 +62,7 @@ const SECTIONS: Section[] = [
       },
       {
         q: 'Can I cancel a booking?',
-        a: 'Yes. Open the booking from the Bookings tab and tap Cancel. Please cancel as early as possible out of courtesy to the worker.',
+        a: 'Yes — cancellation is free at any time before the worker is on the way. Open the booking from the Bookings tab and tap Cancel. Once the worker is en route or the job has started, please talk to them in chat first out of courtesy.',
       },
       {
         q: 'How do I track my booking status?',
@@ -89,6 +89,10 @@ const SECTIONS: Section[] = [
       {
         q: 'What is the FixerHub commission?',
         a: 'FixerHub deducts a small commission from each completed job to keep the platform running. The breakdown is shown on your payment receipt.',
+      },
+      {
+        q: 'What if something goes wrong with a job?',
+        a: 'You are protected. You only pay after the job is marked complete — never upfront. If there is a problem, submit a report (Profile → Report an Issue) referencing the booking: the worker\'s payout is held while our team reviews it, and if the issue is upheld you receive a full refund to your original payment method via Paystack.',
       },
     ],
   },

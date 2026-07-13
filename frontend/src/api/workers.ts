@@ -22,6 +22,9 @@ export interface Worker {
   distanceKm?: number;
   /** Mobile money network for payouts. "MTN" | "VODAFONE" | "AIRTELTIGO" */
   momoNetwork?: string;
+  /** SUBSCRIPTION: effective plan — "FREE" | "PRO" */
+  plan?: string;
+  planExpiresAt?: string;
 }
 
 export async function getNearbyWorkers(
@@ -60,4 +63,9 @@ export async function updateMomoNetwork(userId: number | string, momoNetwork: st
 /** LIVE DISTANCE: push the worker's current GPS so customers' "km away" tracks where they actually are. */
 export async function updateWorkerLocation(userId: number | string, lat: number, lng: number): Promise<void> {
   await client.put(`/workers/by-user/${userId}/location`, { lat, lng });
+}
+
+/** EDIT PROFILE: worker changes their trade/skill (and optionally base location). */
+export async function updateWork(userId: number | string, skill?: string, location?: string): Promise<void> {
+  await client.put(`/workers/by-user/${userId}/work`, { skill, location });
 }

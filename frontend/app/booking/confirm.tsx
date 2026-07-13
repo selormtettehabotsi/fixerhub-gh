@@ -46,11 +46,15 @@ export default function ConfirmBookingScreen() {
   // JOB LOCATION: the customer's position when booking = where the job is
   const { latitude: jobLat, longitude: jobLng } = useLocation();
 
-  const [serviceType, setServiceType] = useState(prefillServiceType ?? skill ?? 'General Repair');
+  // LOCKED: the service type IS the worker's trade — customers can't book a
+  // plumber for "Electrical". (The worker changes their trade in their own profile.)
+  const serviceType = skill ?? prefillServiceType ?? 'General Repair';
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [notes, setNotes] = useState(prefillNotes ?? '');
   const [phone, setPhone] = useState('');
+  // RETENTION: recurring bookings — completing one auto-creates the next
+  const [recurrence, setRecurrence] = useState<'NONE' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('NONE');
   const [bookingMedia, setBookingMedia] = useState<MediaItem[]>([]);
   const [imageUploading, setImageUploading] = useState(false);
   const [pricingStyle, setPricingStyle] = useState<'FIXED' | 'NEGOTIABLE' | 'INSPECTION'>('NEGOTIABLE');
@@ -157,6 +161,7 @@ export default function ConfirmBookingScreen() {
         maxAmount: max,
         notes: notes.trim() || undefined,
         customerPhone: phone.trim(),
+        recurrence,
         // JOB LOCATION: lets the worker see where the job is on the map
         customerLat: jobLat ?? undefined,
         customerLng: jobLng ?? undefined,
@@ -204,17 +209,12 @@ export default function ConfirmBookingScreen() {
           <View style={styles.form}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Service Type</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                {SERVICES.map((s) => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[styles.chip, serviceType === s && styles.chipActive]}
-                    onPress={() => setServiceType(s)}
-                  >
-                    <Text style={[styles.chipText, serviceType === s && styles.chipTextActive]}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <View style={styles.lockedField}>
+                <Ionicons name="construct-outline" size={16} color={Colors.primary} />
+                <Text style={styles.lockedFieldText}>{serviceType}</Text>
+                <Ionicons name="lock-closed" size={13} color={Colors.outline} />
+              </View>
+              <Text style={styles.lockedHint}>Set by the worker's trade and can't be changed here.</Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -273,18 +273,47 @@ export default function ConfirmBookingScreen() {
             </View>
 
             <View style={styles.inputGroup}>
+              <Text style={styles.label}>Repeat</Text>
+              <View style={styles.repeatRow}>
+                {([
+                  { key: 'NONE',     label: 'One-time' },
+                  { key: 'WEEKLY',   label: 'Weekly' },
+                  { key: 'BIWEEKLY', label: '2 weeks' },
+                  { key: 'MONTHLY',  label: 'Monthly' },
+                ] as const).map((opt) => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.repeatChip, recurrence === opt.key && styles.repeatChipActive]}
+                    onPress={() => setRecurrence(opt.key)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.repeatChipText, recurrence === opt.key && styles.repeatChipTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {recurrence !== 'NONE' && (
+                <Text style={styles.lockedHint}>
+                  When this job completes, the next visit is booked automatically.
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
               <Text style={styles.label}>Your Phone</Text>
-              <View style={styles.inputWrapper}>
+              <View style={[styles.inputWrapper, styles.lockedInput]}>
                 <Ionicons name="call-outline" size={18} color={Colors.outline} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   value={phone}
-                  onChangeText={setPhone}
+                  editable={false}
                   placeholder="+233241234567"
                   placeholderTextColor={Colors.outline}
-                  keyboardType="phone-pad"
                 />
+                <Ionicons name="lock-closed" size={13} color={Colors.outline} />
               </View>
+              <Text style={styles.lockedHint}>From your account — change it in Profile, then Edit Profile.</Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -348,6 +377,12 @@ export default function ConfirmBookingScreen() {
         </ScrollView>
 
         <View style={styles.stickyBottom}>
+          {/* PRICE TRANSPARENCY: echo the cost before the commit button */}
+          {minAmount && maxAmount && Number(minAmount) > 0 && Number(maxAmount) >= Number(minAmount) && (
+            <Text style={styles.estimateText}>
+              You'll pay GH₵ {minAmount} – {maxAmount} · final price confirmed by the worker's quote
+            </Text>
+          )}
           <TouchableOpacity onPress={handleConfirm} disabled={loading} activeOpacity={0.85}>
             <LinearGradient
               colors={[Colors.primary, Colors.primaryContainer]}
@@ -362,6 +397,13 @@ export default function ConfirmBookingScreen() {
               )}
             </LinearGradient>
           </TouchableOpacity>
+          {/* TRUST: payment protection + cancellation policy, stated where it matters */}
+          <View style={styles.trustRow}>
+            <Ionicons name="shield-checkmark" size={13} color={Colors.available} />
+            <Text style={styles.trustText}>
+              Pay only when the job is done · Free cancellation until the worker is on the way
+            </Text>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -392,6 +434,27 @@ const styles = StyleSheet.create({
   inputGroup: { gap: 6 },
   label: { fontSize: 17, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
   chipScroll: { marginVertical: 4 },
+  lockedField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryFixed,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignSelf: 'flex-start',
+  },
+  lockedFieldText: { fontSize: 14.5, fontFamily: 'Inter_600SemiBold', color: Colors.onSurface },
+  lockedHint: { fontSize: 11.5, fontFamily: 'Inter_400Regular', color: Colors.onSurfaceVariant, marginTop: 6 },
+  lockedInput: { opacity: 0.75 },
+  repeatRow: { flexDirection: 'row', gap: 8 },
+  repeatChip: { flex: 1, paddingVertical: 9, borderRadius: 10, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center' },
+  repeatChipActive: { backgroundColor: Colors.primary },
+  repeatChipText: { fontSize: 12.5, fontFamily: 'Inter_600SemiBold', color: Colors.onSurfaceVariant },
+  repeatChipTextActive: { color: '#fff' },
+  estimateText: { fontSize: 12.5, fontFamily: 'Inter_600SemiBold', color: Colors.onSurface, textAlign: 'center', marginBottom: 8 },
+  trustRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 8 },
+  trustText: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.onSurfaceVariant, textAlign: 'center', flexShrink: 1 },
   chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surfaceContainerLow, marginRight: 8 },
   chipActive: { backgroundColor: Colors.primary },
   chipText: { fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },

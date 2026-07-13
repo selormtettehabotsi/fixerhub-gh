@@ -35,4 +35,6 @@ public class BookingResponse {
     private BigDecimal    quotedAmount;
     private String        quoteStatus;
     private String        pricingStyle;
+    /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY */
+    private String        recurrence;
 }

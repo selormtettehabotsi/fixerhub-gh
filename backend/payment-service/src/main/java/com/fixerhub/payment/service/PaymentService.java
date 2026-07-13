@@ -28,6 +28,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final PaystackService paystackService;
     private final RestTemplate loadBalancedRestTemplate;
+    private final ReceiptNotificationClient receiptNotificationClient;
 
     /** MONEY (H2): commission rate as exact decimal (e.g. 0.05). */
     @Value("${fixerhub.commission-rate}")
@@ -35,10 +36,86 @@ public class PaymentService {
 
     public PaymentService(PaymentRepository paymentRepository,
                           PaystackService paystackService,
-                          @Qualifier("loadBalancedRestTemplate") RestTemplate loadBalancedRestTemplate) {
+                          @Qualifier("loadBalancedRestTemplate") RestTemplate loadBalancedRestTemplate,
+                          ReceiptNotificationClient receiptNotificationClient) {
         this.paymentRepository = paymentRepository;
         this.paystackService = paystackService;
         this.loadBalancedRestTemplate = loadBalancedRestTemplate;
+        this.receiptNotificationClient = receiptNotificationClient;
+    }
+
+    // ── Verification / settlement (shared by customer verify + webhook) ────
+
+    /**
+     * Verifies with Paystack, VALIDATES THE AMOUNT PAID against the booking
+     * amount, atomically claims SUCCESS (N10), then sends the receipt and
+     * starts the worker payout. Idempotent — safe to call from both the
+     * customer's "I've paid" tap and the Paystack webhook.
+     */
+    public String confirmAndSettle(Payment payment) {
+        if (payment.getStatus() == PaymentStatus.SUCCESS) return "success";
+
+        PaystackService.VerifyResult result = paystackService.verifyTransaction(payment.getPaystackReference());
+        if (!"success".equals(result.status())) {
+            payment.setPaystackStatus(result.status());
+            payment.setStatus(PaymentStatus.FAILED);
+            paymentRepository.save(payment);
+            return result.status();
+        }
+
+        // AMOUNT VALIDATION: what was actually charged must equal the booking amount.
+        long expectedPesewas = PaystackService.toPesewas(payment.getAmount());
+        if (result.amountPesewas() == null || result.amountPesewas() != expectedPesewas) {
+            log.error("AMOUNT MISMATCH for booking {}: expected {} pesewas, Paystack reports {} — NOT settling",
+                    payment.getBookingId(), expectedPesewas, result.amountPesewas());
+            payment.setPaystackStatus("amount_mismatch");
+            paymentRepository.save(payment);
+            return "amount_mismatch";
+        }
+
+        int claimed = paymentRepository.claimSuccess(payment.getId(), PaymentStatus.SUCCESS);
+        if (claimed == 0) return "success"; // another caller settled it first
+
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaystackStatus("success");
+        receiptNotificationClient.sendPaymentReceipt(payment);
+        initiateWorkerPayout(payment);
+
+        // REFERRALS: a completed first payment credits the payer's referrer.
+        // Best effort — never blocks settlement.
+        try {
+            loadBalancedRestTemplate.postForEntity(
+                    "http://auth-service/auth/internal/referrals/first-payment/" + payment.getCustomerId(),
+                    null, Void.class);
+        } catch (Exception e) {
+            log.warn("Referral credit call failed for userId={}: {}", payment.getCustomerId(), e.getMessage());
+        }
+        return "success";
+    }
+
+    // ── Refunds ─────────────────────────────────────────────────────────────
+
+    /**
+     * REFUND (admin only, e.g. paid job cancelled or dispute upheld): full
+     * refund via Paystack. Blocked once the worker payout has gone out —
+     * refunding then would make the platform pay twice.
+     */
+    public Map<String, String> refundPayment(Long bookingId) {
+        Payment payment = paymentRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new NotFoundException("Payment not found for booking " + bookingId));
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
+            throw new BadRequestException("Only successful payments can be refunded (current: " + payment.getStatus() + ")");
+        }
+        if ("success".equalsIgnoreCase(payment.getPayoutStatus())) {
+            throw new BadRequestException("Worker has already been paid out — resolve via a report/dispute instead");
+        }
+        String refundStatus = paystackService.refundTransaction(payment.getPaystackReference());
+        payment.setStatus(PaymentStatus.REFUNDED);
+        payment.setPaystackStatus("refunded");
+        payment.setPayoutStatus("cancelled");
+        paymentRepository.save(payment);
+        log.info("Refund for booking {} initiated — Paystack status: {}", bookingId, refundStatus);
+        return Map.of("status", "refunded", "paystackRefundStatus", refundStatus);
     }
 
     // ── Inner DTOs ──────────────────────────────────────────────────────────

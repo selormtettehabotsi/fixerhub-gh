@@ -36,9 +36,15 @@ public class PaystackService {
         return amountGhs.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 
-    /** Initialize a Paystack transaction. Returns { authorizationUrl, reference }. */
-    @SuppressWarnings("unchecked")
+    /** Initialize a Paystack transaction for a booking. Returns { authorizationUrl, reference }. */
     public Map<String, String> initializePayment(String customerEmail, BigDecimal amountGhs, Long bookingId) {
+        return initializeWithReference(customerEmail, amountGhs,
+                "FH-" + bookingId + "-" + System.currentTimeMillis());
+    }
+
+    /** Initialize a Paystack transaction with an explicit reference (bookings, subscriptions, ...). */
+    @SuppressWarnings("unchecked")
+    public Map<String, String> initializeWithReference(String customerEmail, BigDecimal amountGhs, String reference) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "Bearer " + secretKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -47,8 +53,7 @@ public class PaystackService {
         body.put("email", customerEmail != null && !customerEmail.isBlank() ? customerEmail : "customer@fixerhub.com");
         body.put("amount", toPesewas(amountGhs)); // pesewas
         body.put("currency", "GHS");
-        body.put("reference", "FH-" + bookingId + "-" + System.currentTimeMillis());
-        body.put("metadata", Map.of("bookingId", bookingId));
+        body.put("reference", reference);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
         ResponseEntity<Map> resp = restTemplate.postForEntity(baseUrl + "/transaction/initialize", entity, Map.class);
@@ -141,9 +146,12 @@ public class PaystackService {
         return reference.toString();
     }
 
-    /** Verify a Paystack transaction by reference. Returns "success" or "failed". */
+    /** Status + amount from a Paystack verification. Amount is in pesewas. */
+    public record VerifyResult(String status, Long amountPesewas) {}
+
+    /** Verify a Paystack transaction by reference — returns status AND the amount actually paid. */
     @SuppressWarnings("unchecked")
-    public String verifyPayment(String reference) {
+    public VerifyResult verifyTransaction(String reference) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "Bearer " + secretKey);
         ResponseEntity<Map> resp = restTemplate.exchange(
@@ -153,7 +161,31 @@ public class PaystackService {
             throw new RuntimeException("Paystack verification failed: empty response");
         }
         Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
-        if (data.get("status") == null) return "failed";
-        return data.get("status").toString(); // "success" or "failed"
+        String status = data.get("status") == null ? "failed" : data.get("status").toString();
+        Long amount = data.get("amount") == null ? null : Long.valueOf(data.get("amount").toString());
+        return new VerifyResult(status, amount);
+    }
+
+    /** Back-compat wrapper (status only). */
+    public String verifyPayment(String reference) {
+        return verifyTransaction(reference).status();
+    }
+
+    /** REFUNDS: refund a charged transaction (full amount). Returns Paystack's refund status. */
+    @SuppressWarnings("unchecked")
+    public String refundTransaction(String reference) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + secretKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, Object> body = Map.of("transaction", reference);
+        ResponseEntity<Map> resp = restTemplate.postForEntity(
+                baseUrl + "/refund", new HttpEntity<>(body, headers), Map.class);
+        if (resp.getBody() == null || resp.getBody().get("data") == null) {
+            throw new RuntimeException("Paystack refund failed: empty response");
+        }
+        Map<String, Object> data = (Map<String, Object>) resp.getBody().get("data");
+        String status = data.get("status") == null ? "pending" : data.get("status").toString();
+        log.info("Paystack refund initiated for reference={} — status={}", reference, status);
+        return status;
     }
 }

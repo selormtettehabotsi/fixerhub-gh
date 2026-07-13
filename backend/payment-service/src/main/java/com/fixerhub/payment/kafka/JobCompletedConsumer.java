@@ -32,6 +32,10 @@ public class JobCompletedConsumer {
     @Value("${fixerhub.commission-rate}")
     private BigDecimal commissionRate;
 
+    /** SUBSCRIPTIONS: reduced commission for workers on the Pro plan. */
+    @Value("${fixerhub.pro-commission-rate:0.03}")
+    private BigDecimal proCommissionRate;
+
     public JobCompletedConsumer(PaystackService paystackService,
                                 PaymentRepository paymentRepository,
                                 @Qualifier("loadBalancedRestTemplate") RestTemplate loadBalancedRestTemplate,
@@ -48,6 +52,8 @@ public class JobCompletedConsumer {
         private Long id;
         private String phone;
         private String name;
+        /** SUBSCRIPTIONS: effective plan ("FREE"/"PRO") — Pro pays lower commission. */
+        private String plan;
     }
 
     @Data
@@ -114,9 +120,12 @@ public class JobCompletedConsumer {
                 return;
             }
 
-            // MONEY (H2): 2dp HALF_UP commission math; worker gets the exact remainder
+            // MONEY (H2): 2dp HALF_UP commission math; worker gets the exact remainder.
+            // SUBSCRIPTIONS: Pro workers pay the reduced rate.
+            BigDecimal effectiveRate = (worker != null && "PRO".equals(worker.getPlan()))
+                    ? proCommissionRate : commissionRate;
             amount = amount.setScale(2, RoundingMode.HALF_UP);
-            BigDecimal commissionAmount = amount.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal commissionAmount = amount.multiply(effectiveRate).setScale(2, RoundingMode.HALF_UP);
             BigDecimal workerAmount     = amount.subtract(commissionAmount);
 
             log.info("Booking #{} | Worker #{} | Total: {} | Commission: {} | Worker receives: {}",
@@ -130,7 +139,7 @@ public class JobCompletedConsumer {
                     .customerId(customerId)
                     .workerId(workerId)
                     .amount(amount)
-                    .commissionRate(commissionRate)
+                    .commissionRate(effectiveRate)
                     .commissionAmount(commissionAmount)
                     .workerAmount(workerAmount)
                     .status(PaymentStatus.PENDING)

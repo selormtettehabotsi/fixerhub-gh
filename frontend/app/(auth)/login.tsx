@@ -47,22 +47,8 @@ export default function LoginScreen() {
         ['profilePicture', data.profilePicture ?? ''],
       ]);
 
-      // Register for push notifications in the background — don't block navigation
-      import('expo-notifications').then(async (Notifications) => {
-        try {
-          const { status } = await Notifications.requestPermissionsAsync();
-          if (status === 'granted') {
-            const Constants = (await import('expo-constants')).default;
-            const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-            const tokenData = await Notifications.getExpoPushTokenAsync(
-              projectId ? { projectId } : undefined
-            );
-            await AsyncStorage.setItem('fcmToken', tokenData.data);
-          }
-        } catch {
-          // Notifications not supported in Expo Go — proceed silently
-        }
-      }).catch(() => {});
+      // PUSH: register the native FCM token with the backend (fire-and-forget)
+      import('../../src/utils/pushToken').then((m) => m.registerPushToken()).catch(() => {});
 
       switch (data.role) {
         case 'WORKER':

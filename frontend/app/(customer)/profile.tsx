@@ -8,8 +8,13 @@ import { Colors } from '../../src/constants/colors';
 import { pickAndUploadImage } from '../../src/hooks/useImageUpload';
 import client from '../../src/api/client';
 import { formatUserId } from '../../src/utils/formatId';
-import { deleteAccount } from '../../src/api/auth';
+import { deleteAccount, getVerificationStatus, VerificationStatus, VerifyChannel } from '../../src/api/auth';
+import VerifyOtpModal from '../../src/components/VerifyOtpModal';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
+import ThemeSelector from '../../src/components/ThemeSelector';
+import EditProfileModal from '../../src/components/EditProfileModal';
+import ChangePasswordModal from '../../src/components/ChangePasswordModal';
+import ReferralCard from '../../src/components/ReferralCard';
 
 export default function CustomerProfile() {
   const [name, setName] = useState('');
@@ -18,6 +23,10 @@ export default function CustomerProfile() {
   const [userId, setUserId] = useState('');
   const [profilePicture, setProfilePicture] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [verifStatus, setVerifStatus] = useState<VerificationStatus | null>(null);
+  const [verifyChannel, setVerifyChannel] = useState<VerifyChannel | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -38,6 +47,7 @@ export default function CustomerProfile() {
       if (pic) setProfilePicture(pic);
     }
     load();
+    getVerificationStatus().then(setVerifStatus).catch(() => {});
   }, []);
 
   function getInitials(n: string) {
@@ -141,12 +151,22 @@ export default function CustomerProfile() {
         </View>
 
         <View style={styles.infoSection}>
-          <InfoRow iconName="mail-outline" label="Email" value={email || '—'} />
-          <InfoRow iconName="call-outline" label="Phone" value={phone || '—'} />
+          <InfoRow iconName="mail-outline" label="Email" value={email || '—'}
+                   verified={verifStatus?.emailVerified} onVerify={() => setVerifyChannel('EMAIL')} />
+          <InfoRow iconName="call-outline" label="Phone" value={phone || '—'}
+                   verified={verifStatus?.phoneVerified} onVerify={() => setVerifyChannel('PHONE')} />
           <InfoRow iconName="finger-print-outline" label="User ID" value={userId ? formatUserId(userId) : '—'} />
         </View>
 
+        <ReferralCard />
+
+        <ThemeSelector />
+
         <View style={styles.menuSection}>
+          <MenuRow iconName="create-outline" label="Edit Profile" onPress={() => setShowEditProfile(true)} />
+          <View style={styles.menuDivider} />
+          <MenuRow iconName="key-outline" label="Change Password" onPress={() => setShowChangePassword(true)} />
+          <View style={styles.menuDivider} />
           <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
           <View style={styles.menuDivider} />
           <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
@@ -162,6 +182,36 @@ export default function CustomerProfile() {
           <Text style={styles.deleteBtnText}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── Edit profile modal ────────────────────────────────────────── */}
+      <EditProfileModal
+        visible={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+        onSaved={(u) => {
+          setName(u.name);
+          setEmail(u.email);
+          setPhone(u.phone);
+          // Changed contact info is un-verified server-side — refresh badges
+          // and prompt the user to verify the NEW email/number right away.
+          getVerificationStatus().then(setVerifStatus).catch(() => {});
+          const channel = u.emailChanged ? 'EMAIL' : u.phoneChanged ? 'PHONE' : null;
+          if (channel) setTimeout(() => setVerifyChannel(channel), 500);
+        }}
+      />
+
+      {/* ── Change password modal ─────────────────────────────────────── */}
+      <ChangePasswordModal visible={showChangePassword} onClose={() => setShowChangePassword(false)} />
+
+      {/* ── Verify email / phone modal ────────────────────────────────── */}
+      {verifyChannel && (
+        <VerifyOtpModal
+          visible
+          channel={verifyChannel}
+          target={verifyChannel === 'EMAIL' ? email : phone}
+          onClose={() => setVerifyChannel(null)}
+          onVerified={setVerifStatus}
+        />
+      )}
 
       {/* ── Delete account modal ──────────────────────────────────────── */}
       <Modal visible={showDeleteModal} transparent animationType="slide" onRequestClose={() => setShowDeleteModal(false)}>
@@ -214,7 +264,14 @@ function MenuRow({ iconName, label, onPress }: { iconName: React.ComponentProps<
   );
 }
 
-function InfoRow({ iconName, label, value }: { iconName: React.ComponentProps<typeof Ionicons>['name']; label: string; value: string }) {
+function InfoRow({ iconName, label, value, verified, onVerify }: {
+  iconName: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  value: string;
+  /** VERIFICATION badge: true = verified tick, false = "Verify" button, undefined = nothing */
+  verified?: boolean;
+  onVerify?: () => void;
+}) {
   return (
     <View style={styles.infoRow}>
       <Ionicons name={iconName} size={20} color={Colors.primary} />
@@ -222,6 +279,17 @@ function InfoRow({ iconName, label, value }: { iconName: React.ComponentProps<ty
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value}</Text>
       </View>
+      {verified === true && (
+        <View style={styles.verifiedBadge}>
+          <Ionicons name="checkmark-circle" size={14} color={Colors.available} />
+          <Text style={styles.verifiedText}>Verified</Text>
+        </View>
+      )}
+      {verified === false && onVerify && (
+        <TouchableOpacity style={styles.verifyBtn} onPress={onVerify} activeOpacity={0.8}>
+          <Text style={styles.verifyBtnText}>Verify</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -242,6 +310,10 @@ const styles = StyleSheet.create({
   infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 24 },
   infoRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 14 },
   infoContent: { flex: 1 },
+  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  verifiedText: { fontSize: 11.5, color: Colors.available, fontFamily: 'Inter_600SemiBold' },
+  verifyBtn: { backgroundColor: Colors.primaryFixed, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  verifyBtnText: { fontSize: 12, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
   infoLabel: { fontSize: 13, color: Colors.outline, fontFamily: 'Inter_400Regular', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   infoValue: { fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
   menuSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, marginBottom: 24, overflow: 'hidden' },

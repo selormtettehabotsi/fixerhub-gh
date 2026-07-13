@@ -8,6 +8,8 @@ export interface RegisterPayload {
   phone: string;
   location: string;
   skill?: string;
+  /** REFERRALS: optional invite code from an existing user. */
+  referralCode?: string;
 }
 
 export interface LoginPayload {
@@ -68,5 +70,62 @@ export async function logoutServer(refreshToken: string | null): Promise<void> {
  *  Password is required to confirm the deletion. */
 export async function deleteAccount(password: string): Promise<{ message: string }> {
   const res = await client.delete<{ message: string }>('/auth/account', { data: { password } });
+  return res.data;
+}
+
+export interface UpdateProfilePayload {
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
+/** EDIT PROFILE: update name/email/phone. If the email changed, the response
+ *  carries a fresh token pair (email is the JWT identity) — the caller must
+ *  store them. */
+export async function updateProfile(payload: UpdateProfilePayload): Promise<AuthResponse> {
+  const res = await client.put<AuthResponse>('/auth/profile', payload);
+  return res.data;
+}
+
+/** CHANGE PASSWORD: requires the current password. Response carries a fresh
+ *  token pair (all other sessions are revoked) — the caller must store them. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<AuthResponse> {
+  const res = await client.put<AuthResponse>('/auth/password', { currentPassword, newPassword });
+  return res.data;
+}
+
+// ── REFERRALS ──────────────────────────────────────────────────────────────
+
+export interface ReferralInfo {
+  code: string;
+  count: number;
+}
+
+/** Own referral code + number of invitees who completed their first paid booking. */
+export async function getMyReferral(): Promise<ReferralInfo> {
+  const res = await client.get<ReferralInfo>('/auth/referrals/me');
+  return res.data;
+}
+
+// ── VERIFICATION: email (mail OTP) + phone (SMS OTP), badge-only ──────────
+
+export type VerifyChannel = 'EMAIL' | 'PHONE';
+
+export interface VerificationStatus {
+  emailVerified: boolean;
+  phoneVerified: boolean;
+}
+
+export async function getVerificationStatus(): Promise<VerificationStatus> {
+  const res = await client.get<VerificationStatus>('/auth/verify/status');
+  return res.data;
+}
+
+export async function sendVerifyOtp(channel: VerifyChannel): Promise<void> {
+  await client.post('/auth/verify/send', { channel });
+}
+
+export async function confirmVerifyOtp(channel: VerifyChannel, otp: string): Promise<VerificationStatus> {
+  const res = await client.post<VerificationStatus>('/auth/verify/confirm', { channel, otp });
   return res.data;
 }

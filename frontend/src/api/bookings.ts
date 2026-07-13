@@ -16,6 +16,8 @@ export interface BookingPayload {
   bookingImage?: string;
   bookingImages?: string[];
   pricingStyle?: string;
+  /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY */
+  recurrence?: string;
 }
 
 export interface Booking {
@@ -38,6 +40,13 @@ export interface Booking {
   bookingImage?: string;
   bookingImages?: string[];
   pricingStyle?: string;
+  recurrence?: string;
+}
+
+/** MILESTONES: completed-jobs count for the worker profile badge. */
+export async function getWorkerJobStats(workerId: number | string): Promise<{ completedJobs: number }> {
+  const res = await client.get<{ completedJobs: number }>(`/bookings/worker/${workerId}/stats`);
+  return res.data;
 }
 
 export async function createBooking(payload: BookingPayload): Promise<Booking> {

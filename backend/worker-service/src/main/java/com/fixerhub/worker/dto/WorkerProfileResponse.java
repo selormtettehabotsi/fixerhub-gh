@@ -42,4 +42,8 @@ public class WorkerProfileResponse {
 
     /** Mobile money network for automated payouts. "MTN" | "VODAFONE" | "AIRTELTIGO" */
     private String momoNetwork;
+
+    /** SUBSCRIPTION: effective plan — "FREE" or "PRO" (already expiry-checked). */
+    private String plan;
+    private java.time.LocalDateTime planExpiresAt;
 }

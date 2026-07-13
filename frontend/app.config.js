@@ -6,6 +6,8 @@ module.exports = ({ config }) => {
   const mapsKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? 'MISSING_GOOGLE_MAPS_KEY';
   return {
     ...config,
+    // expo-sqlite: synchronous kv-store used for the theme preference
+    plugins: [...(config.plugins ?? []), 'expo-sqlite'],
     android: {
       ...config.android,
       config: { ...config.android?.config, googleMaps: { apiKey: mapsKey } },

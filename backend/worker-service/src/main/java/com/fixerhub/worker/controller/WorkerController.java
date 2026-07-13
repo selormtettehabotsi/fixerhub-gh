@@ -40,6 +40,7 @@ public class WorkerController {
         w.setIdBackUrl(null);
         w.setHeadshotUrl(null);
         w.setVerificationNote(null);
+        w.setPlanExpiresAt(null); // billing detail — plan badge itself stays public
         // SECURITY (N6): never expose a worker's exact home coordinates publicly.
         // Round to 2 decimal places (~1.1 km) — enough for a map pin, not enough
         // to locate a house. distanceKm stays precise (computed server-side).
@@ -152,6 +153,36 @@ public class WorkerController {
             @PathVariable Long userId,
             @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(workerService.updateProfilePicture(userId, body.getOrDefault("profilePicture", "")));
+    }
+
+    /** SUBSCRIPTION (internal): payment-service activates a plan after a verified charge. */
+    @PutMapping("/internal/by-user/{userId}/plan")
+    public ResponseEntity<WorkerProfileResponse> activatePlanInternal(
+            @PathVariable Long userId,
+            @RequestBody Map<String, String> body) {
+        String plan = body.getOrDefault("plan", "PRO");
+        int days = Integer.parseInt(body.getOrDefault("days", "30"));
+        return ResponseEntity.ok(workerService.activatePlan(userId, plan, days));
+    }
+
+    /** EDIT PROFILE (internal): auth-service syncs contact info — blocked at the gateway. */
+    @PutMapping("/internal/by-user/{userId}/contact")
+    public ResponseEntity<WorkerProfileResponse> updateContactInternal(
+            @PathVariable Long userId,
+            @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(workerService.updateContact(
+                userId, body.get("name"), body.get("email"), body.get("phone")));
+    }
+
+    /** EDIT PROFILE: worker changes their trade/skill (and optionally base location). Self or admin. */
+    @PutMapping("/by-user/{userId}/work")
+    public ResponseEntity<WorkerProfileResponse> updateWork(
+            @PathVariable Long userId,
+            @RequestBody Map<String, String> body) {
+        if (!AuthContext.isAdmin() && !userId.equals(AuthContext.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only update your own profile");
+        }
+        return ResponseEntity.ok(workerService.updateWork(userId, body.get("skill"), body.get("location")));
     }
 
     /**

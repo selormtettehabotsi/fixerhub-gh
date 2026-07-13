@@ -72,7 +72,8 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getOrCreatePayUrl(bookingId));
     }
 
-    /** Customer calls this after completing Paystack checkout. */
+    /** Customer calls this after completing Paystack checkout. The webhook
+     *  usually settles first — this is the in-app fallback/confirmation. */
     @PostMapping("/booking/{bookingId}/verify")
     public ResponseEntity<Map<String, String>> verifyPayment(@PathVariable Long bookingId) {
         // SECURITY (C4): only the booking's customer may trigger verification/payout.
@@ -80,33 +81,14 @@ public class PaymentController {
         Payment payment = paymentRepository.findByBookingId(bookingId)
                 .orElseThrow(() -> new NotFoundException("Payment not found for booking " + bookingId
                         + ". Please tap 'Pay Now' first to open the payment page."));
-
-        // IDEMPOTENCY (H3): a replayed verify on an already-successful payment
-        // must not re-send receipts or re-initiate the worker payout.
-        if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            return ResponseEntity.ok(Map.of("status", "success"));
-        }
-
-        String status = paystackService.verifyPayment(payment.getPaystackReference());
-        if ("success".equals(status)) {
-            // RACE GUARD (N10): claim SUCCESS atomically — only the single caller
-            // that flips the row sends the receipt and initiates the payout.
-            int claimed = paymentRepository.claimSuccess(payment.getId(), PaymentStatus.SUCCESS);
-            if (claimed == 0) {
-                return ResponseEntity.ok(Map.of("status", "success"));
-            }
-            payment.setStatus(PaymentStatus.SUCCESS);
-            payment.setPaystackStatus("success");
-            // Trigger payment receipt notification (SMS + push)
-            receiptNotificationClient.sendPaymentReceipt(payment);
-            // Initiate automated worker payout via Paystack Transfer
-            // (initiateWorkerPayout enforces the payout state machine — H3)
-            paymentService.initiateWorkerPayout(payment);
-        } else {
-            payment.setPaystackStatus(status);
-            payment.setStatus(PaymentStatus.FAILED);
-            paymentRepository.save(payment);
-        }
+        // Amount validation + idempotent settle + receipt + payout (shared with webhook)
+        String status = paymentService.confirmAndSettle(payment);
         return ResponseEntity.ok(Map.of("status", status));
+    }
+
+    /** REFUND (ADMIN): full Paystack refund for a paid booking whose payout hasn't gone out. */
+    @PostMapping("/booking/{bookingId}/refund")
+    public ResponseEntity<Map<String, String>> refundPayment(@PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.refundPayment(bookingId));
     }
 }

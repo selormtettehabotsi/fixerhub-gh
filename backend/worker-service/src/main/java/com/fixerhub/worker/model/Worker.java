@@ -1,6 +1,7 @@
 package com.fixerhub.worker.model;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -53,4 +54,8 @@ public class Worker {
     /** Mobile money network for automated payouts. "MTN" | "VODAFONE" | "AIRTELTIGO" */
     @Builder.Default
     private String momoNetwork = "MTN";
+
+    // ── SUBSCRIPTION: "PRO" is only effective while planExpiresAt is in the future ──
+    private String plan;
+    private LocalDateTime planExpiresAt;
 }

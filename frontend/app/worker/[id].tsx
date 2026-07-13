@@ -41,6 +41,11 @@ export default function WorkerProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // RETENTION: favorites (customers only)
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [canFavorite, setCanFavorite] = useState(false);
+  // MILESTONES: completed jobs badge
+  const [completedJobs, setCompletedJobs] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -56,7 +61,33 @@ export default function WorkerProfileScreen() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+
+    // MILESTONES: how many jobs has this worker completed?
+    import('../../src/api/bookings').then((b) =>
+      b.getWorkerJobStats(id!).then((s) => setCompletedJobs(s.completedJobs)).catch(() => {})
+    );
+
+    // RETENTION: is this worker already in the customer's favorites?
+    AsyncStorage.getItem('role').then((role) => {
+      if (role !== 'CUSTOMER') return;
+      setCanFavorite(true);
+      import('../../src/api/favorites').then((f) =>
+        f.getFavorites().then((ids) => setIsFavorite(ids.includes(Number(id)))).catch(() => {})
+      );
+    });
   }, [id]);
+
+  async function toggleFavorite() {
+    const f = await import('../../src/api/favorites');
+    const next = !isFavorite;
+    setIsFavorite(next); // optimistic
+    try {
+      if (next) await f.addFavorite(id!);
+      else await f.removeFavorite(id!);
+    } catch {
+      setIsFavorite(!next); // revert on failure
+    }
+  }
 
   if (loading) {
     return (
@@ -152,6 +183,15 @@ export default function WorkerProfileScreen() {
                   <Ionicons name="star" size={14} color={Colors.starColor} />
                   <Text style={styles.ratingNum}>{(worker.rating ?? 0).toFixed(1)}</Text>
                 </View>
+                {canFavorite && !isOwner && (
+                  <TouchableOpacity onPress={toggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons
+                      name={isFavorite ? 'heart' : 'heart-outline'}
+                      size={24}
+                      color={isFavorite ? Colors.error : Colors.outline}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
 
               {worker.location ? (
@@ -165,6 +205,13 @@ export default function WorkerProfileScreen() {
                 <View style={styles.chip}>
                   <Text style={styles.chipText}>{worker.skill}</Text>
                 </View>
+                {completedJobs > 0 && (
+                  <View style={styles.chip}>
+                    <Text style={styles.chipText}>
+                      🏆 {completedJobs} {completedJobs === 1 ? 'job' : 'jobs'} done
+                    </Text>
+                  </View>
+                )}
                 {worker.available ? (
                   <View style={[styles.chip, styles.chipAvail]}>
                     <Text style={[styles.chipText, styles.chipAvailText]}>Available</Text>

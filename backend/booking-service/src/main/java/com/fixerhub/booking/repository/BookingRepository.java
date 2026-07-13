@@ -12,4 +12,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     // M2: bounded, newest-first variants — list endpoints must never return unbounded tables
     List<Booking> findByCustomerIdOrderByIdDesc(Long customerId, Pageable pageable);
     List<Booking> findByWorkerIdOrderByIdDesc(Long workerId, Pageable pageable);
+
+    /** MILESTONES: completed-jobs count shown as a badge on the public profile. */
+    long countByWorkerIdAndStatus(Long workerId, Booking.Status status);
 }

@@ -18,4 +18,7 @@ public class PaymentReceiptRequest {
     private String customerName;
     private String customerFcmToken;
     private String workerFcmToken;
+    /** PUSH: userIds so notification-service can look up registered tokens. */
+    private Long customerUserId;
+    private Long workerUserId;
 }

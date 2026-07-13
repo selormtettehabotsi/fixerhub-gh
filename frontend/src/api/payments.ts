@@ -66,3 +66,22 @@ export async function getWorkerPaymentSummary(workerId: number | string): Promis
   const res = await client.get<WorkerPaymentSummary>(`/payments/worker/${workerId}/summary`);
   return res.data;
 }
+
+// ── SUBSCRIPTIONS: worker "Pro" plan ───────────────────────────────────────
+
+export interface ProInitiateResult {
+  authorizationUrl: string;
+  reference: string;
+  amount: string;
+  days: string;
+}
+
+export async function initiateProSubscription(): Promise<ProInitiateResult> {
+  const res = await client.post<ProInitiateResult>('/payments/subscription/initiate');
+  return res.data;
+}
+
+export async function verifyProSubscription(reference: string): Promise<{ status: string }> {
+  const res = await client.post<{ status: string }>('/payments/subscription/verify', { reference });
+  return res.data;
+}

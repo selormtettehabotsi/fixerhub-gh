@@ -35,6 +35,8 @@ public class ReceiptNotificationClient {
             body.put("transactionRef", payment.getPaystackReference());
             body.put("workerName", payment.getWorkerName());
             body.put("customerName", null);
+            // PUSH: notification-service resolves FCM tokens from these userIds
+            body.put("customerUserId", payment.getCustomerId());
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

@@ -12,6 +12,7 @@ public class NotificationService {
 
     private final SmsService smsService;
     private final PushNotificationService pushNotificationService;
+    private final LookupClient lookupClient;
 
     public void sendPaymentReceipt(PaymentReceiptRequest req) {
         String serviceType = req.getServiceType() != null ? req.getServiceType() : "service";
@@ -32,17 +33,28 @@ public class NotificationService {
                             + " job (Booking #" + req.getBookingId() + "). Check the app for details.");
         }
 
-        // 3. FCM push to customer (skipped gracefully if no token)
-        pushNotificationService.sendPush(req.getCustomerFcmToken(),
+        // 3. FCM push to customer — use the token in the request, else look it
+        //    up by userId from auth-service (where the app registers it on login)
+        String customerToken = realToken(req.getCustomerFcmToken()) != null
+                ? req.getCustomerFcmToken()
+                : lookupClient.fcmTokenForUser(req.getCustomerUserId());
+        pushNotificationService.sendPush(customerToken,
                 "Payment Confirmed ✓",
                 "GH₵" + amount + " paid for your " + serviceType + " booking");
 
         // 4. FCM push to worker
-        pushNotificationService.sendPush(req.getWorkerFcmToken(),
+        String workerToken = realToken(req.getWorkerFcmToken()) != null
+                ? req.getWorkerFcmToken()
+                : lookupClient.fcmTokenForUser(req.getWorkerUserId());
+        pushNotificationService.sendPush(workerToken,
                 "Payment Received 💰",
                 "GH₵" + workerAmt + " for " + serviceType + " job (Booking #" + req.getBookingId() + ")");
 
         log.info("Payment receipt processed for bookingId={}", req.getBookingId());
+    }
+
+    private static String realToken(String token) {
+        return (token == null || token.isBlank() || token.contains("placeholder")) ? null : token;
     }
 
     private String formatAmount(java.math.BigDecimal amount) {

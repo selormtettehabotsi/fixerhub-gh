@@ -12,4 +12,6 @@ public class RegisterRequest {
     private String phone;
     private String skill;
     private String location;
+    /** REFERRALS: optional code of the user who invited this person. */
+    private String referralCode;
 }

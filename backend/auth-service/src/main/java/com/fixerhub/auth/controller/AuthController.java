@@ -110,6 +110,108 @@ public class AuthController {
         return ResponseEntity.ok(authService.deleteAccount(email, password));
     }
 
+    /** EDIT PROFILE: update the logged-in user's name / email / phone.
+     *  Returns fresh tokens in the payload when the email (JWT identity) changed. */
+    @PutMapping("/profile")
+    public ResponseEntity<AuthResponse> updateProfile(@RequestBody Map<String, String> body) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String email = (auth != null && auth.isAuthenticated()) ? auth.getName() : null;
+        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(
+                authService.updateProfile(email, body.get("name"), body.get("email"), body.get("phone")));
+    }
+
+    // ------------------------------------------------------------------ //
+    //  PUSH TOKENS
+    // ------------------------------------------------------------------ //
+
+    /** PUSH: the app registers its FCM device token here on login. */
+    @PutMapping("/fcm-token")
+    public ResponseEntity<Map<String, String>> updateFcmToken(@RequestBody Map<String, String> body) {
+        String email = principalEmail();
+        if (email == null) return ResponseEntity.status(401).build();
+        authService.updateFcmToken(email, body.get("token"));
+        return ResponseEntity.ok(Map.of("status", "saved"));
+    }
+
+    /** Internal (blocked at gateway): notification-service resolves a user's push token. */
+    @GetMapping("/internal/users/{id}/fcm-token")
+    public ResponseEntity<Map<String, String>> getFcmTokenInternal(@PathVariable Long id) {
+        String token = authService.getFcmToken(id);
+        return ResponseEntity.ok(Map.of("token", token == null ? "" : token));
+    }
+
+    // ------------------------------------------------------------------ //
+    //  REFERRALS
+    // ------------------------------------------------------------------ //
+
+    /** Own referral code + how many invitees completed their first paid booking. */
+    @GetMapping("/referrals/me")
+    public ResponseEntity<Map<String, Object>> myReferral() {
+        String email = principalEmail();
+        if (email == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(authService.referralInfo(email));
+    }
+
+    /** Internal (blocked at gateway): payment-service reports a user's first successful payment. */
+    @PostMapping("/internal/referrals/first-payment/{userId}")
+    public ResponseEntity<Void> referralFirstPayment(@PathVariable Long userId) {
+        authService.creditReferrerForFirstPayment(userId);
+        return ResponseEntity.ok().build();
+    }
+
+    // ------------------------------------------------------------------ //
+    //  EMAIL / PHONE VERIFICATION
+    // ------------------------------------------------------------------ //
+
+    private String principalEmail() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String email = (auth != null && auth.isAuthenticated()) ? auth.getName() : null;
+        return (email == null || email.isBlank() || "anonymousUser".equals(email)) ? null : email;
+    }
+
+    /** Send an OTP to the logged-in user's email or phone. Body: { channel: "EMAIL" | "PHONE" } */
+    @PostMapping("/verify/send")
+    public ResponseEntity<Map<String, String>> sendVerificationOtp(@RequestBody Map<String, String> body) {
+        String email = principalEmail();
+        if (email == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(authService.sendVerificationOtp(email, body.get("channel")));
+    }
+
+    /** Confirm the OTP. Body: { channel, otp } → { emailVerified, phoneVerified } */
+    @PostMapping("/verify/confirm")
+    public ResponseEntity<Map<String, Object>> confirmVerification(@RequestBody Map<String, String> body) {
+        String email = principalEmail();
+        if (email == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(authService.confirmVerification(email, body.get("channel"), body.get("otp")));
+    }
+
+    /** Current verification badges for the logged-in user. */
+    @GetMapping("/verify/status")
+    public ResponseEntity<Map<String, Object>> verificationStatus() {
+        String email = principalEmail();
+        if (email == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(authService.verificationStatus(email));
+    }
+
+    /** CHANGE PASSWORD (logged-in): { currentPassword, newPassword }.
+     *  Revokes all refresh tokens and returns a fresh token pair. */
+    @PutMapping("/password")
+    public ResponseEntity<AuthResponse> changePassword(@RequestBody Map<String, String> body) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String email = (auth != null && auth.isAuthenticated()) ? auth.getName() : null;
+        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(
+                authService.changePassword(email, body.get("currentPassword"), body.get("newPassword")));
+    }
+
     /** Upload any image to S3 — returns { url } */
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> uploadImage(@RequestParam("file") MultipartFile file,

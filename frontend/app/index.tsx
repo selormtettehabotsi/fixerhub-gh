@@ -18,6 +18,9 @@ export default function SplashScreen() {
         return;
       }
 
+      // PUSH: refresh the FCM token registration on every app start
+      import('../src/utils/pushToken').then((m) => m.registerPushToken()).catch(() => {});
+
       switch (role) {
         case 'WORKER':
           router.replace('/(worker)/dashboard');
@@ -36,13 +39,13 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <Ionicons name="construct" size={64} color={Colors.onPrimary} style={styles.logoIcon} />
+        <Ionicons name="construct" size={110} color={Colors.onPrimary} style={styles.logoIcon} />
         <Text style={styles.logoText}>FixerHub</Text>
-        <Text style={styles.tagline}>Ghana's #1 Service Marketplace</Text>
+        <Text style={styles.tagline}>Trusted hands for every fix, one tap away!</Text>
       </View>
       <View style={styles.locationRow}>
         <Ionicons name="location-sharp" size={16} color="rgba(255,255,255,0.7)" />
-        <Text style={styles.location}> Reliability Powered by Accra</Text>
+        <Text style={styles.location}>Reliable, Fast and Secure </Text>
       </View>
     </View>
   );

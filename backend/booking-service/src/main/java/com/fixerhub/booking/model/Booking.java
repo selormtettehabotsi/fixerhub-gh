@@ -39,6 +39,10 @@ public class Booking {
 
     private String pricingStyle;
 
+    /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY — completing a recurring
+     *  booking auto-creates the next one. */
+    private String recurrence;
+
     @Enumerated(EnumType.STRING)
     private Status status;
 

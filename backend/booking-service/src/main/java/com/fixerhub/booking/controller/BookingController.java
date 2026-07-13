@@ -56,6 +56,14 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.getWorkerBookings(workerId, page, size));
     }
 
+    /** MILESTONES: aggregate completed-jobs count for the public profile badge.
+     *  Any authenticated user may read it — it's a count, not booking data. */
+    @GetMapping("/worker/{workerId}/stats")
+    public ResponseEntity<java.util.Map<String, Object>> workerStats(@PathVariable Long workerId) {
+        return ResponseEntity.ok(java.util.Map.of(
+                "completedJobs", bookingService.completedJobsCount(workerId)));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<BookingResponse> updateBooking(@PathVariable Long id,
                                                          @RequestBody BookingRequest request) {

@@ -25,9 +25,20 @@ import client from '../../src/api/client';
 import type { VerificationStatus } from '../../src/api/admin';
 import { formatWorkerId } from '../../src/utils/formatId';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
+import ThemeSelector from '../../src/components/ThemeSelector';
+import EditProfileModal from '../../src/components/EditProfileModal';
+import ChangePasswordModal from '../../src/components/ChangePasswordModal';
+import VerifyOtpModal from '../../src/components/VerifyOtpModal';
+import * as WebBrowser from 'expo-web-browser';
+import { initiateProSubscription, verifyProSubscription } from '../../src/api/payments';
+import ReferralCard from '../../src/components/ReferralCard';
+import { getVerificationStatus, VerificationStatus as ContactVerifStatus, VerifyChannel } from '../../src/api/auth';
 
 interface WorkerProfile {
   id: number;
+  skill?: string;
+  plan?: string;
+  planExpiresAt?: string;
   verified: boolean;
   verificationStatus: VerificationStatus;
   verificationNote?: string;
@@ -75,6 +86,14 @@ export default function WorkerProfileScreen() {
   // Full-screen image viewer
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   // Delete account
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [contactVerif, setContactVerif] = useState<ContactVerifStatus | null>(null);
+  const [verifyChannel, setVerifyChannel] = useState<VerifyChannel | null>(null);
+
+  // SUBSCRIPTION: pending Pro purchase reference (awaiting "I've paid")
+  const [proRef, setProRef] = useState<string | null>(null);
+  const [proBusy, setProBusy] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword]   = useState('');
   const [deleting, setDeleting]               = useState(false);
@@ -112,6 +131,7 @@ export default function WorkerProfileScreen() {
     } catch {
       // Silently ignore — don't block profile display
     }
+    getVerificationStatus().then(setContactVerif).catch(() => {});
   }, []);
 
   useFocusEffect(useCallback(() => { loadWorkerProfile(); }, [loadWorkerProfile]));
@@ -351,8 +371,10 @@ export default function WorkerProfileScreen() {
 
         {/* ── Info ──────────────────────────────────────────────────────── */}
         <View style={styles.infoSection}>
-          <InfoRow iconName="mail-outline"        label="Email"     value={email  || '—'} />
-          <InfoRow iconName="call-outline"        label="Phone"     value={phone  || '—'} />
+          <InfoRow iconName="mail-outline"        label="Email"     value={email  || '—'}
+                   verified={contactVerif?.emailVerified} onVerify={() => setVerifyChannel('EMAIL')} />
+          <InfoRow iconName="call-outline"        label="Phone"     value={phone  || '—'}
+                   verified={contactVerif?.phoneVerified} onVerify={() => setVerifyChannel('PHONE')} />
           <InfoRow iconName="finger-print-outline" label="Worker ID" value={userId ? formatWorkerId(userId) : '—'} />
         </View>
 
@@ -375,6 +397,84 @@ export default function WorkerProfileScreen() {
         </TouchableOpacity>
 
         {showBusinessSettings && (<>
+
+        {/* ── FixerHub Pro subscription ─────────────────────────────────── */}
+        <View style={styles.sectionHeader}>
+          <Ionicons name="rocket-outline" size={20} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>FixerHub Pro</Text>
+        </View>
+        <View style={styles.proCard}>
+          {workerProfile?.plan === 'PRO' ? (
+            <>
+              <View style={styles.proActiveRow}>
+                <View style={styles.proChip}><Text style={styles.proChipText}>PRO</Text></View>
+                <Text style={styles.proActiveText}>
+                  Active until {workerProfile.planExpiresAt
+                    ? new Date(workerProfile.planExpiresAt).toLocaleDateString()
+                    : '—'}
+                </Text>
+              </View>
+              <Text style={styles.proDesc}>Lower commission, PRO badge, and priority in nearby results.</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.proDesc}>
+                Go Pro for GH₵30/month: pay less commission on every job, get a PRO badge
+                customers trust, and rank higher in nearby search.
+              </Text>
+              {proRef == null ? (
+                <TouchableOpacity
+                  style={[styles.proBtn, proBusy && { opacity: 0.6 }]}
+                  disabled={proBusy}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    setProBusy(true);
+                    try {
+                      const init = await initiateProSubscription();
+                      setProRef(init.reference);
+                      await WebBrowser.openBrowserAsync(init.authorizationUrl);
+                    } catch (err: any) {
+                      Alert.alert('Could not start checkout', err?.response?.data?.message ?? err?.message ?? 'Try again later');
+                    } finally {
+                      setProBusy(false);
+                    }
+                  }}
+                >
+                  {proBusy ? <ActivityIndicator color="#fff" size="small" /> : (
+                    <Text style={styles.proBtnText}>Go Pro — GH₵30 / month</Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.proBtn, proBusy && { opacity: 0.6 }]}
+                  disabled={proBusy}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    setProBusy(true);
+                    try {
+                      const res = await verifyProSubscription(proRef);
+                      if (res.status === 'success') {
+                        setProRef(null);
+                        Alert.alert('Welcome to Pro!', 'Your Pro plan is active for the next 30 days.');
+                        loadWorkerProfile();
+                      } else {
+                        Alert.alert('Not confirmed yet', 'Paystack reports: ' + res.status + '. Complete the payment, then try again.');
+                      }
+                    } catch (err: any) {
+                      Alert.alert('Verification failed', err?.response?.data?.message ?? err?.message ?? 'Try again');
+                    } finally {
+                      setProBusy(false);
+                    }
+                  }}
+                >
+                  {proBusy ? <ActivityIndicator color="#fff" size="small" /> : (
+                    <Text style={styles.proBtnText}>I've paid — activate Pro</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
 
         {/* ── Identity Verification ─────────────────────────────────────── */}
         <View style={styles.sectionHeader}>
@@ -587,8 +687,18 @@ export default function WorkerProfileScreen() {
         </>)}
         {/* ── end Business Settings ─────────────────────────────────────── */}
 
+        {/* ── Referrals ─────────────────────────────────────────────────── */}
+        <ReferralCard />
+
+        {/* ── Appearance ────────────────────────────────────────────────── */}
+        <ThemeSelector />
+
         {/* ── Support menu ──────────────────────────────────────────────── */}
         <View style={styles.menuSection}>
+          <MenuRow iconName="create-outline" label="Edit Profile" onPress={() => setShowEditProfile(true)} />
+          <View style={styles.menuDivider} />
+          <MenuRow iconName="key-outline" label="Change Password" onPress={() => setShowChangePassword(true)} />
+          <View style={styles.menuDivider} />
           <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
           <View style={styles.menuDivider} />
           <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
@@ -605,6 +715,38 @@ export default function WorkerProfileScreen() {
           <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Edit profile modal */}
+      <EditProfileModal
+        visible={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+        workerUserId={userId || null}
+        initialSkill={workerProfile?.skill ?? ''}
+        onSaved={(u) => {
+          setName(u.name);
+          setEmail(u.email);
+          setPhone(u.phone);
+          loadWorkerProfile(); // refresh skill + synced contact info + badges
+          // Changed contact info is un-verified server-side — prompt the user
+          // to verify the NEW email/number right away.
+          const channel = u.emailChanged ? 'EMAIL' : u.phoneChanged ? 'PHONE' : null;
+          if (channel) setTimeout(() => setVerifyChannel(channel), 500);
+        }}
+      />
+
+      {/* Change password modal */}
+      <ChangePasswordModal visible={showChangePassword} onClose={() => setShowChangePassword(false)} />
+
+      {/* Verify email / phone modal */}
+      {verifyChannel && (
+        <VerifyOtpModal
+          visible
+          channel={verifyChannel}
+          target={verifyChannel === 'EMAIL' ? email : phone}
+          onClose={() => setVerifyChannel(null)}
+          onVerified={setContactVerif}
+        />
+      )}
 
       {/* Delete account modal */}
       <Modal visible={showDeleteModal} transparent animationType="slide" onRequestClose={() => setShowDeleteModal(false)}>
@@ -661,10 +803,13 @@ export default function WorkerProfileScreen() {
 
 // ─── InfoRow ─────────────────────────────────────────────────────────────────
 
-function InfoRow({ iconName, label, value }: {
+function InfoRow({ iconName, label, value, verified, onVerify }: {
   iconName: React.ComponentProps<typeof Ionicons>['name'];
   label: string;
   value: string;
+  /** VERIFICATION badge: true = verified tick, false = "Verify" button, undefined = nothing */
+  verified?: boolean;
+  onVerify?: () => void;
 }) {
   return (
     <View style={styles.infoRow}>
@@ -673,6 +818,17 @@ function InfoRow({ iconName, label, value }: {
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value}</Text>
       </View>
+      {verified === true && (
+        <View style={styles.verifiedBadgeRow}>
+          <Ionicons name="checkmark-circle" size={14} color={Colors.available} />
+          <Text style={styles.verifiedRowText}>Verified</Text>
+        </View>
+      )}
+      {verified === false && onVerify && (
+        <TouchableOpacity style={styles.verifyRowBtn} onPress={onVerify} activeOpacity={0.8}>
+          <Text style={styles.verifyRowBtnText}>Verify</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -777,11 +933,25 @@ const styles = StyleSheet.create({
   infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 24 },
   infoRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 14 },
   infoContent: { flex: 1 },
+  verifiedBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  verifiedRowText: { fontSize: 11.5, color: Colors.available, fontFamily: 'Inter_600SemiBold' },
+  verifyRowBtn: { backgroundColor: Colors.primaryFixed, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  verifyRowBtnText: { fontSize: 12, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
   infoLabel: { fontSize: 13, color: Colors.outline, fontFamily: 'Inter_400Regular', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   infoValue: { fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
 
   // Section header
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginBottom: 10 },
+
+  // FixerHub Pro subscription card
+  proCard: { marginHorizontal: 20, marginBottom: 16, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.outlineVariant },
+  proActiveRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  proChip: { backgroundColor: Colors.primary, borderRadius: 5, paddingHorizontal: 8, paddingVertical: 2 },
+  proChipText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  proActiveText: { fontSize: 14, color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
+  proDesc: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', lineHeight: 19, marginBottom: 12 },
+  proBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  proBtnText: { color: '#fff', fontSize: 14, fontFamily: 'Inter_600SemiBold' },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
 
   // Status badge

@@ -71,6 +71,14 @@ public class RouteConfig {
                             c.setDenyEmptyKey(false);
                         }))
                         .uri("lb://auth-service"))
+                // VERIFICATION: OTP sends share the abuse budget with password reset
+                .route("auth-verify-send-limited", r -> r.path("/auth/verify/send")
+                        .filters(f -> f.requestRateLimiter(c -> {
+                            c.setRateLimiter(forgotPasswordRateLimiter);
+                            c.setKeyResolver(ipKeyResolver);
+                            c.setDenyEmptyKey(false);
+                        }))
+                        .uri("lb://auth-service"))
                 .route("auth-service", r -> r.path("/auth/**")
                         .uri("lb://auth-service"))
 
@@ -105,6 +113,16 @@ public class RouteConfig {
                         .filters(f -> f.filter(authFilter))
                         .uri("lb://booking-service"))
 
+                // RETENTION: customer favorites live in booking-service
+                .route("favorites", r -> r.path("/favorites/**")
+                        .filters(f -> f.filter(authFilter))
+                        .uri("lb://booking-service"))
+
+                // WEBHOOK: Paystack calls this without a JWT — the payment
+                // service authenticates it via the HMAC signature header.
+                .route("payment-webhook", r -> r.path("/payments/webhook")
+                        .and().method("POST")
+                        .uri("lb://payment-service"))
                 .route("payment-service", r -> r.path("/payments/**")
                         .filters(f -> f.filter(authFilter))
                         .uri("lb://payment-service"))

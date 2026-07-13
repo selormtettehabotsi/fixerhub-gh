@@ -23,4 +23,6 @@ public class BookingRequest {
     private String bookingImage;
     private List<String> bookingImages;
     private String pricingStyle;
+    /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY */
+    private String recurrence;
 }

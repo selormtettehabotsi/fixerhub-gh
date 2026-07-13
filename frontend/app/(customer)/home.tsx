@@ -18,7 +18,8 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
-import { getNearbyWorkers, Worker } from '../../src/api/workers';
+import { getNearbyWorkers, getWorker, Worker } from '../../src/api/workers';
+import { getFavorites } from '../../src/api/favorites';
 import { useLocation } from '../../src/hooks/useLocation';
 import { useTabBar } from '../../src/context/TabBarContext';
 import WorkerCard from '../../src/components/WorkerCard';
@@ -48,6 +49,8 @@ export default function CustomerHome() {
   const [name, setName] = useState('');
   const [profilePicture, setProfilePicture] = useState('');
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  // RETENTION: saved workers for the "Your Workers" quick-rebook row
+  const [favoriteWorkers, setFavoriteWorkers] = useState<Worker[]>([]);
 
   const loadWorkers = useCallback(async (silent = false) => {
     const useLat = latitude ?? 5.6037;
@@ -85,6 +88,11 @@ export default function CustomerHome() {
     // FRESHNESS: re-fetch workers on focus so new ratings and distances show
     // up when returning from a review, booking, or after moving around.
     loadWorkers();
+    // RETENTION: refresh the favorites row (max 10, newest first)
+    getFavorites()
+      .then((ids) => Promise.all(ids.slice(0, 10).map((wid) => getWorker(wid).catch(() => null))))
+      .then((list) => setFavoriteWorkers(list.filter((w): w is Worker => w != null)))
+      .catch(() => {});
     // LIVE DISTANCE: silent background poll while this tab is focused, so
     // "km away" updates when WORKERS move (their app pushes GPS to the server)
     // even if this customer stays perfectly still. No spinner, keeps old list
@@ -145,6 +153,7 @@ export default function CustomerHome() {
         verified={w.verified}
         profilePicture={w.profilePicture}
         distanceKm={w.distanceKm}
+        plan={w.plan}
         onPress={() => router.push(`/worker/${w.id}`)}
         onChat={myUserId ? () => {
           // Use w.id (worker profile ID) — same key used in bookings
@@ -200,6 +209,31 @@ export default function CustomerHome() {
           ))}
         </ScrollView>
       </View>
+
+      {/* RETENTION: one-tap access to previously saved workers */}
+      {favoriteWorkers.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Workers</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.favRow}>
+            {favoriteWorkers.map((fw) => (
+              <TouchableOpacity key={fw.id} style={styles.favCard} activeOpacity={0.8}
+                                onPress={() => router.push(`/worker/${fw.id}`)}>
+                {fw.profilePicture ? (
+                  <Image source={{ uri: cloudinaryThumb(fw.profilePicture, 54) }} style={styles.favAvatar} />
+                ) : (
+                  <View style={[styles.favAvatar, styles.favAvatarFallback]}>
+                    <Text style={styles.favAvatarText}>{fw.name?.[0] ?? '?'}</Text>
+                  </View>
+                )}
+                <Text style={styles.favName} numberOfLines={1}>{fw.name.split(' ')[0]}</Text>
+                <Text style={styles.favSkill} numberOfLines={1}>{fw.skill}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
@@ -266,6 +300,15 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 20, marginBottom: 20 },
   listItem: { paddingHorizontal: 20 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+
+  // "Your Workers" quick-rebook row
+  favRow: { gap: 12, paddingRight: 8 },
+  favCard: { width: 84, alignItems: 'center', backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 6 },
+  favAvatar: { width: 48, height: 48, borderRadius: 24, marginBottom: 6 },
+  favAvatarFallback: { backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  favAvatarText: { color: Colors.onPrimary, fontSize: 18, fontWeight: '700' },
+  favName: { fontSize: 12.5, fontFamily: 'Inter_600SemiBold', color: Colors.onSurface },
+  favSkill: { fontSize: 10.5, fontFamily: 'Inter_400Regular', color: Colors.onSurfaceVariant },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 12 },
   sectionCount: { fontSize: 17, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
   categoryScroll: { marginBottom: 4 },

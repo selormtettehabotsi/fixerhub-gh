@@ -30,6 +30,7 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [location, setLocation] = useState('');
   const [skill, setSkill] = useState('Plumbing');
+  const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +50,7 @@ export default function RegisterScreen() {
         phone: phone.trim(),
         location: location.trim(),
         ...(role === 'WORKER' ? { skill } : {}),
+        ...(referralCode.trim() ? { referralCode: referralCode.trim().toUpperCase() } : {}),
       });
       // SECURITY (M1): tokens go to the keychain via tokenStorage, not AsyncStorage
       const tokenStorage = await import('../../src/utils/tokenStorage');
@@ -62,6 +64,8 @@ export default function RegisterScreen() {
         ['phone', data.phone ?? phone.trim()],
         ['profilePicture', data.profilePicture ?? ''],
       ]);
+      // PUSH: register the native FCM token with the backend (fire-and-forget)
+      import('../../src/utils/pushToken').then((m) => m.registerPushToken()).catch(() => {});
       if (role === 'WORKER') {
         router.replace('/(worker)/dashboard');
       } else if (role === 'CUSTOMER') {
@@ -126,6 +130,7 @@ export default function RegisterScreen() {
             <InputField label="Password" value={password} onChangeText={setPassword} placeholder="Minimum 6 characters" iconName="lock-closed-outline" secureTextEntry />
             <InputField label="Phone" value={phone} onChangeText={setPhone} placeholder="+233241234567" iconName="call-outline" keyboardType="phone-pad" />
             <InputField label="Location" value={location} onChangeText={setLocation} placeholder="Accra, Ghana" iconName="location-outline" />
+            <InputField label="Referral Code (optional)" value={referralCode} onChangeText={setReferralCode} placeholder="FH-XXXXXX" iconName="gift-outline" autoCapitalize="characters" />
 
             {role === 'WORKER' && (
               <View style={styles.inputGroup}>

@@ -43,6 +43,7 @@ public class BookingService {
                 .bookingImage(request.getBookingImage())
                 .bookingImages(toJson(request.getBookingImages()))
                 .pricingStyle(request.getPricingStyle())
+                .recurrence(request.getRecurrence())
                 .status(Booking.Status.PENDING)
                 .build();
         return toResponse(bookingRepository.save(booking));
@@ -66,6 +67,11 @@ public class BookingService {
     public List<BookingResponse> getAllBookings() {
         return bookingRepository.findAll()
                 .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    /** MILESTONES: completed-jobs count for the public profile badge. */
+    public long completedJobsCount(Long workerId) {
+        return bookingRepository.countByWorkerIdAndStatus(workerId, Booking.Status.COMPLETED);
     }
 
     public List<BookingResponse> getWorkerBookings(Long workerId, int page, int size) {
@@ -109,9 +115,44 @@ public class BookingService {
         if (saved.getStatus() == Booking.Status.COMPLETED) {
             bookingEventPublisher.publishBookingCompleted(
                     saved.getId(), saved.getCustomerId(), saved.getCustomerPhone(), saved.getAmount(), saved.getWorkerId());
+            spawnNextRecurring(saved); // RETENTION: recurring bookings
         }
 
         return toResponse(saved);
+    }
+
+    /**
+     * RETENTION: completing a recurring booking auto-creates the next visit
+     * (same worker, service and details) scheduled one interval ahead.
+     */
+    private void spawnNextRecurring(Booking done) {
+        String rec = done.getRecurrence();
+        if (rec == null || rec.isBlank() || "NONE".equalsIgnoreCase(rec)) return;
+        int days = switch (rec.toUpperCase()) {
+            case "WEEKLY"   -> 7;
+            case "BIWEEKLY" -> 14;
+            case "MONTHLY"  -> 30;
+            default         -> 0;
+        };
+        if (days == 0) return;
+        Booking next = Booking.builder()
+                .customerId(done.getCustomerId())
+                .workerId(done.getWorkerId())
+                .workerName(done.getWorkerName())
+                .serviceType(done.getServiceType())
+                .amount(done.getAmount())
+                .minAmount(done.getMinAmount())
+                .maxAmount(done.getMaxAmount())
+                .notes(done.getNotes())
+                .customerPhone(done.getCustomerPhone())
+                .customerLat(done.getCustomerLat())
+                .customerLng(done.getCustomerLng())
+                .pricingStyle(done.getPricingStyle())
+                .recurrence(rec)
+                .scheduledAt(java.time.LocalDateTime.now().plusDays(days))
+                .status(Booking.Status.PENDING)
+                .build();
+        bookingRepository.save(next);
     }
 
     public BookingResponse updateBooking(Long id, BookingRequest request) {
@@ -199,6 +240,7 @@ public class BookingService {
                 .quotedAmount(booking.getQuotedAmount())
                 .quoteStatus(booking.getQuoteStatus() != null ? booking.getQuoteStatus().name() : null)
                 .pricingStyle(booking.getPricingStyle())
+                .recurrence(booking.getRecurrence())
                 .build();
     }
 }

@@ -30,6 +30,30 @@ public class User {
     /** SECURITY (N3): failed reset-OTP attempts — OTP is invalidated after 5. */
     private Integer otpAttempts;
 
+    // ── VERIFICATION: email (mail OTP) and phone (SMS OTP) ─────────────────
+    private Boolean emailVerified;
+    private Boolean phoneVerified;
+    private String verifyOtp;
+    /** Which channel the pending OTP was sent for: EMAIL or PHONE. */
+    private String verifyOtpChannel;
+    private LocalDateTime verifyOtpExpiresAt;
+    private Integer verifyOtpAttempts;
+
+    // ── REFERRALS ───────────────────────────────────────────────────────────
+    /** This user's own shareable code (e.g. FH-4X7K9C). */
+    @Column(unique = true)
+    private String referralCode;
+    /** userId of whoever referred this user (set at registration). */
+    private Long referredBy;
+    /** How many referred users have completed their first paid booking. */
+    private Integer referralCount;
+    /** True once this user's first payment credited their referrer (one-shot). */
+    private Boolean referralCredited;
+
+    /** PUSH: FCM device token from the app (updated on every login). */
+    @Column(length = 512)
+    private String fcmToken;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

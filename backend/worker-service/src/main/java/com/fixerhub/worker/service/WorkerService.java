@@ -75,6 +75,40 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    /** EDIT PROFILE (internal): auth-service syncs name/email/phone after a user edit. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updateContact(Long userId, String name, String email, String phone) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        if (name != null && !name.isBlank()) worker.setName(name.trim());
+        if (email != null && !email.isBlank()) worker.setEmail(email.trim());
+        if (phone != null && !phone.isBlank()) worker.setPhone(phone.trim());
+        return toResponse(workerRepository.save(worker));
+    }
+
+    /** EDIT PROFILE: worker changes their trade (skill) and/or base location. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse updateWork(Long userId, String skill, String location) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        if (skill != null && !skill.isBlank()) worker.setSkill(skill.trim());
+        if (location != null && !location.isBlank()) {
+            worker.setLocation(location.trim());
+            double[] coords = geocodingService.geocode(location.trim());
+            if (coords != null) {
+                worker.setLatitude(coords[0]);
+                worker.setLongitude(coords[1]);
+            }
+        }
+        return toResponse(workerRepository.save(worker));
+    }
+
     /**
      * LIVE DISTANCE: the worker app pushes its real GPS position here so
      * nearby-search distances reflect where the worker actually IS, not the
@@ -300,7 +334,11 @@ public class WorkerService {
                     response.setDistanceKm(Math.round(distance * 10.0) / 10.0);
                     return response;
                 })
-                .sorted((a, b) -> Double.compare(a.getDistanceKm(), b.getDistanceKm()))
+                // Closest first; PRO workers win ties within the same ~0.5 km bucket
+                .sorted(java.util.Comparator
+                        .comparingDouble((WorkerProfileResponse r) -> Math.ceil(r.getDistanceKm() * 2))
+                        .thenComparing(r -> !"PRO".equals(r.getPlan()))
+                        .thenComparingDouble(WorkerProfileResponse::getDistanceKm))
                 .collect(Collectors.toList());
 
         List<WorkerProfileResponse> withoutCoords = workers.stream()
@@ -341,7 +379,35 @@ public class WorkerService {
                 .maxPrice(w.getMaxPrice())
                 .pricingStyle(w.getPricingStyle())
                 .momoNetwork(w.getMomoNetwork() != null ? w.getMomoNetwork() : "MTN")
+                .plan(effectivePlan(w))
+                .planExpiresAt(w.getPlanExpiresAt())
                 .build();
+    }
+
+    /** SUBSCRIPTION: PRO only counts while unexpired — no cleanup job needed. */
+    private static String effectivePlan(Worker w) {
+        boolean pro = "PRO".equalsIgnoreCase(w.getPlan())
+                && w.getPlanExpiresAt() != null
+                && w.getPlanExpiresAt().isAfter(java.time.LocalDateTime.now());
+        return pro ? "PRO" : "FREE";
+    }
+
+    /** SUBSCRIPTION (internal): payment-service activates a plan after a verified charge. */
+    @Caching(evict = {
+        @CacheEvict(value = "worker", allEntries = true),
+        @CacheEvict(value = "nearby", allEntries = true)
+    })
+    public WorkerProfileResponse activatePlan(Long userId, String plan, int days) {
+        Worker worker = workerRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Worker not found"));
+        worker.setPlan(plan);
+        // Extend from the current expiry when renewing early, else from now
+        java.time.LocalDateTime base =
+                worker.getPlanExpiresAt() != null && worker.getPlanExpiresAt().isAfter(java.time.LocalDateTime.now())
+                        ? worker.getPlanExpiresAt() : java.time.LocalDateTime.now();
+        worker.setPlanExpiresAt(base.plusDays(days));
+        log.info("Plan {} activated for workerUserId={} until {}", plan, userId, worker.getPlanExpiresAt());
+        return toResponse(workerRepository.save(worker));
     }
 
     /** Update the worker's mobile money network for automated payouts. */
