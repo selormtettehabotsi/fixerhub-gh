@@ -1,6 +1,6 @@
 import React from 'react';
 import { Animated, TouchableOpacity, View, Text, StyleSheet, Platform } from 'react-native';
-import { BottomTabBarProps } from 'expo-router/node_modules/@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabBar } from '../context/TabBarContext';
 import { useUnread } from '../context/UnreadContext';
