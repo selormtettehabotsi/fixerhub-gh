@@ -20,16 +20,21 @@
       },
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_KEY"
+          "apiKey": "MISSING_GOOGLE_MAPS_KEY"
         }
       },
-      "package": "com.fixerhub.app"
+      "package": "com.fixerhub.app",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "bundleIdentifier": "com.fixerhub.app",
       "supportsTablet": false,
       "config": {
-        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_KEY"
+        "googleMapsApiKey": "MISSING_GOOGLE_MAPS_KEY"
       }
     },
     "web": {
@@ -61,6 +66,12 @@
         "projectId": "543ca2f0-bb1f-422c-bfc1-8354563713fe"
       }
     },
-    "owner": "selormcyrils-team"
+    "owner": "selormcyrils-team",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/543ca2f0-bb1f-422c-bfc1-8354563713fe"
+    }
   }
 }

@@ -16,8 +16,14 @@ frontend/.env
 frontend/.env.local
 frontend/.env.*
 
-# Firebase service account 
+# Firebase — service account + Android app config (both are credentials)
 **/firebase-service-account.json
+**/google-services.json
+frontend/google-services.json
+
+# Built app binaries — never commit (large, and rebuildable)
+*.apk
+*.aab
 
 
 # IDEs
