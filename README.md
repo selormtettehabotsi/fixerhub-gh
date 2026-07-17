@@ -15,6 +15,11 @@ Built by a team of students (FIXERHUB) at KNUST (Kwame Nkrumah University of Sci
 - **Worker KYC verification** — ID + selfie review flow with admin approval
 - **Ratings & reviews** — verified per completed booking, averaged onto worker profiles
 - **Admin dashboard** — users, bookings, revenue, commission, and payout stats
+- **Account management** — edit profile, change password, and verify email (mail OTP) & phone (SMS OTP) with badges
+- **Worker Pro subscription** — GH₵30/month for lower commission, a PRO badge, and priority in nearby search
+- **Referrals** — every user gets a share code; the referrer is credited when their invitee completes a first paid booking
+- **Retention** — favorite workers with one-tap rebooking, recurring bookings (weekly/bi-weekly/monthly), and worker "jobs completed" milestones
+- **Light / Dark / System theme** — selectable in-app and persisted
 
 ## Architecture
 
@@ -83,7 +88,58 @@ npm install
 npx expo start --port 8088
 ```
 
-Scan the QR code with Expo Go. Set `EXPO_PUBLIC_API_URL` in `frontend/.env` to your machine's LAN IP, e.g. `http://192.168.x.x:8080`.
+Scan the QR code with Expo Go. Set `EXPO_PUBLIC_API_URL` in `frontend/.env` to your machine's LAN IP, e.g. `http://192.168.x.x:8080` (or the deployed URL — see Deployment below).
+
+> On a locked-down campus network that blocks device-to-device traffic, use `--tunnel`, or run Metro over the phone's personal hotspot with `REACT_NATIVE_PACKAGER_HOSTNAME=<laptop-hotspot-ip> npx expo start -c --port 8088`.
+
+### 5. Build the Android APK
+
+Installable APK via EAS (cloud build — no Android Studio needed):
+
+```bash
+cd frontend
+npm install -g eas-cli
+eas login
+eas build -p android --profile preview
+```
+
+The build URL lives in `eas.json` (`preview.env.EXPO_PUBLIC_API_URL`), so the APK talks to whatever backend you point it at. A config plugin (`plugins/withAndroidV1Signing.js`) re-enables **v1 APK signing** so the APK installs on OEM skins (MIUI/EMUI) that reject v2-only packages.
+
+## Deployment
+
+FixerHub is deployed publicly at **`https://api.fixerhub.me`** via a **Cloudflare Tunnel** that exposes the local `docker compose` stack over HTTPS — free, no cloud VM, no card required.
+
+**One-time setup**
+
+1. Register a free domain (e.g. a `.me` from the GitHub Student Pack / Namecheap) and add it to a free Cloudflare account; point the registrar's nameservers at Cloudflare.
+2. Install `cloudflared`, then create the named tunnel and DNS route:
+   ```bash
+   cloudflared tunnel login
+   cloudflared tunnel create fixerhub
+   cloudflared tunnel route dns fixerhub api.fixerhub.me
+   ```
+3. Create `~/.cloudflared/config.yml`:
+   ```yaml
+   tunnel: <tunnel-id>
+   credentials-file: C:/Users/<you>/.cloudflared/<tunnel-id>.json
+   ingress:
+     - hostname: api.fixerhub.me
+       service: http://localhost:8080
+     - service: http_status:404
+   ```
+
+**Run it**
+
+```bash
+docker compose --profile app up -d          # the 9-service backend
+cloudflared tunnel run fixerhub             # expose it at https://api.fixerhub.me
+```
+
+To keep the tunnel up without a terminal, install it as a background service (PowerShell as Administrator): copy `~/.cloudflared` into the SYSTEM profile, `cloudflared service install`, then `Start-Service Cloudflared`.
+
+Point the app + webhook at the deployment: set `EXPO_PUBLIC_API_URL=https://api.fixerhub.me` (in `frontend/.env` and `eas.json`) and the Paystack webhook to `https://api.fixerhub.me/payments/webhook`.
+
+> This is a **pilot/demo** deployment — the backend runs through the host machine, so Docker and one `cloudflared` instance must stay running. A 24/7 production host would use a cloud VM behind TLS; everything else (custom domain, public reachability, HTTPS, working webhook) is already in place.
 
 ## Repository layout
 

@@ -7,7 +7,16 @@ module.exports = ({ config }) => {
   return {
     ...config,
     // expo-sqlite: synchronous kv-store used for the theme preference
-    plugins: [...(config.plugins ?? []), 'expo-sqlite'],
+    // withAndroidV1Signing: re-enable v1 APK signing so OEM installers (MIUI/EMUI) can parse the APK
+    // expo-build-properties: allow cleartext (http) traffic so a release APK can reach the
+    //   dev/LAN backend over plain HTTP (release builds block cleartext by default). Remove
+    //   or set false once the backend is served over HTTPS.
+    plugins: [
+      ...(config.plugins ?? []),
+      'expo-sqlite',
+      './plugins/withAndroidV1Signing',
+      ['expo-build-properties', { android: { usesCleartextTraffic: true } }],
+    ],
     android: {
       ...config.android,
       config: { ...config.android?.config, googleMaps: { apiKey: mapsKey } },
