@@ -24,12 +24,16 @@ export async function loadThemePreference(): Promise<ThemePref> {
   return 'system';
 }
 
-/** Persist the choice and reload the app so every screen repaints. */
+/** Persist the choice and reload the app so every screen repaints.
+ *  Screens capture Colors into their StyleSheets at import time, so a live
+ *  repaint needs a JS reload. DevSettings.reload() does that instantly in dev
+ *  (Expo Go), but is a NO-OP in a production build — there we must tell the
+ *  user to reopen, otherwise tapping a theme looks like it did nothing. */
 export function setThemePreference(pref: ThemePref) {
   Storage.setItemSync(KEY, pref);
-  if (typeof DevSettings?.reload === 'function') {
+  if (__DEV__ && typeof DevSettings?.reload === 'function') {
     DevSettings.reload();
   } else {
-    Alert.alert('Theme saved', 'Close and reopen the app to apply the new theme.');
+    Alert.alert('Theme updated', 'Reopen FixerHub to finish applying your new theme.');
   }
 }
