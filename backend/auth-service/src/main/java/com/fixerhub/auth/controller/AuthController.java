@@ -22,6 +22,7 @@ public class AuthController {
     private final AuthService authService;
     private final CloudinaryService cloudinaryService;
     private final ReportService reportService;
+    private final com.fixerhub.auth.service.NotificationInboxService notificationInboxService;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
@@ -57,14 +58,33 @@ public class AuthController {
 
     @GetMapping("/users")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        return ResponseEntity.ok(authService.getAllUsers());
+    public ResponseEntity<List<UserResponse>> getAllUsers(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(defaultValue = "50") int size) {
+        // M2: paged when ?page= is provided; full list otherwise (dashboard counts)
+        return ResponseEntity.ok(page == null
+                ? authService.getAllUsers()
+                : authService.getUsersPaged(page, size));
     }
 
-    /** Internal endpoint for service-to-service calls (no auth required). */
+    /** MODERATION (ADMIN): suspend or unsuspend an account. */
+    @PutMapping("/users/{id}/suspend")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserResponse> setSuspended(
+            @PathVariable Long id, @RequestBody Map<String, Boolean> body) {
+        boolean suspended = Boolean.TRUE.equals(body.get("suspended"));
+        return ResponseEntity.ok(authService.setSuspended(id, suspended));
+    }
+
+    /** Internal endpoint for service-to-service calls (no auth required).
+     *  M2: paged when ?page= is provided (admin Users screen); full list otherwise. */
     @GetMapping("/internal/users")
-    public ResponseEntity<List<UserResponse>> getAllUsersInternal() {
-        return ResponseEntity.ok(authService.getAllUsers());
+    public ResponseEntity<List<UserResponse>> getAllUsersInternal(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(page == null
+                ? authService.getAllUsers()
+                : authService.getUsersPaged(page, size));
     }
 
     /** M6 (internal): payment-service checks for unresolved payment disputes before paying out. */
@@ -92,6 +112,14 @@ public class AuthController {
     @GetMapping("/reports")
     public ResponseEntity<List<ReportResponse>> getAllReports() {
         return ResponseEntity.ok(reportService.getAllReports());
+    }
+
+    /** DISPUTE RESOLUTION (ADMIN): move a report OPEN → REVIEWING → RESOLVED/DISMISSED.
+     *  Closing a PAYMENT_PROBLEM report lifts the payout hold on its booking. */
+    @PutMapping("/reports/{id}/status")
+    public ResponseEntity<ReportResponse> updateReportStatus(
+            @PathVariable Long id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(reportService.updateStatus(id, body.get("status"), body.get("note")));
     }
 
     /** Permanently delete the currently logged-in account. Requires password confirmation. */
@@ -154,6 +182,53 @@ public class AuthController {
         String email = principalEmail();
         if (email == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(authService.referralInfo(email));
+    }
+
+    // ------------------------------------------------------------------ //
+    //  NOTIFICATION CENTER (bell + history)
+    // ------------------------------------------------------------------ //
+
+    /** Internal (blocked at gateway): notification-service records a fan-out here. */
+    @PostMapping("/internal/notifications")
+    public ResponseEntity<Void> recordNotification(@RequestBody Map<String, Object> body) {
+        Long userId = body.get("userId") != null ? Long.valueOf(String.valueOf(body.get("userId"))) : null;
+        Long bookingId = body.get("bookingId") != null ? Long.valueOf(String.valueOf(body.get("bookingId"))) : null;
+        notificationInboxService.record(userId,
+                (String) body.get("title"), (String) body.get("body"),
+                (String) body.get("type"), bookingId);
+        return ResponseEntity.ok().build();
+    }
+
+    /** In-app notification history for the logged-in user (newest first). */
+    @GetMapping("/notifications")
+    public ResponseEntity<List<com.fixerhub.auth.model.Notification>> myNotifications(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "30") int size) {
+        return ResponseEntity.ok(notificationInboxService.list(principalEmail(), page, size));
+    }
+
+    /** Unread badge count for the bell icon. */
+    @GetMapping("/notifications/unread-count")
+    public ResponseEntity<Map<String, Long>> notificationUnreadCount() {
+        return ResponseEntity.ok(notificationInboxService.unreadCount(principalEmail()));
+    }
+
+    @PutMapping("/notifications/{id}/read")
+    public ResponseEntity<Void> markNotificationRead(@PathVariable Long id) {
+        notificationInboxService.markRead(principalEmail(), id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/notifications/read-all")
+    public ResponseEntity<Void> markAllNotificationsRead() {
+        notificationInboxService.markAllRead(principalEmail());
+        return ResponseEntity.ok().build();
+    }
+
+    /** ADMIN STATS (internal): referral programme totals for the dashboard. */
+    @GetMapping("/internal/referrals/stats")
+    public ResponseEntity<Map<String, Long>> referralStats() {
+        return ResponseEntity.ok(authService.referralStats());
     }
 
     /** Internal (blocked at gateway): payment-service reports a user's first successful payment. */

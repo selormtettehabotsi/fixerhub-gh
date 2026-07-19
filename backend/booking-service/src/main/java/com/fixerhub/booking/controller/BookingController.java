@@ -106,8 +106,20 @@ public class BookingController {
 
     /** Internal endpoint for admin-service to fetch all bookings (not exposed via gateway). */
     @GetMapping("/internal/all")
-    public ResponseEntity<List<BookingResponse>> getAllBookings() {
-        return ResponseEntity.ok(bookingService.getAllBookings());
+    public ResponseEntity<List<BookingResponse>> getAllBookings(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(defaultValue = "50") int size) {
+        // M2: paged when ?page= is provided; full list otherwise (dashboard counts)
+        return ResponseEntity.ok(page == null
+                ? bookingService.getAllBookings()
+                : bookingService.getBookingsPaged(page, size));
+    }
+
+    /** ADMIN CHARTS (internal): bookings created per day for the dashboard trend. */
+    @GetMapping("/internal/stats/daily")
+    public ResponseEntity<List<java.util.Map<String, Object>>> bookingsPerDay(
+            @RequestParam(defaultValue = "14") int days) {
+        return ResponseEntity.ok(bookingService.bookingsPerDay(days));
     }
 
     /** Internal endpoint for payment-service to fetch a booking (not exposed via gateway). */

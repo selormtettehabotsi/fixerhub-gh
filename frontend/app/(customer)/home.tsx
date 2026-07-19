@@ -21,6 +21,7 @@ import { Colors } from '../../src/constants/colors';
 import { getNearbyWorkers, getWorker, Worker } from '../../src/api/workers';
 import { getFavorites } from '../../src/api/favorites';
 import { useLocation } from '../../src/hooks/useLocation';
+import NotificationBell from '../../src/components/NotificationBell';
 import { useTabBar } from '../../src/context/TabBarContext';
 import WorkerCard from '../../src/components/WorkerCard';
 import CategoryCard from '../../src/components/CategoryCard';
@@ -171,13 +172,13 @@ export default function CustomerHome() {
           <Text style={styles.greeting}>{greeting()}{name ? `, ${name.split(' ')[0]}` : ''}</Text>
           <Text style={styles.headerSubtitle}>Find a trusted worker near you</Text>
         </View>
-        {profilePicture ? (
-          <Image source={{ uri: cloudinaryThumb(profilePicture, 42) }} style={styles.headerAvatar} />
-        ) : (
-          <TouchableOpacity style={styles.notifBtn}>
-            <Ionicons name="notifications-outline" size={22} color={Colors.onSurface} />
-          </TouchableOpacity>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {/* NOTIFICATION CENTER: bell with unread badge */}
+          <NotificationBell />
+          {profilePicture ? (
+            <Image source={{ uri: cloudinaryThumb(profilePicture, 42) }} style={styles.headerAvatar} />
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.searchRow}>

@@ -8,4 +8,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     Optional<User> findByPhone(String phone);
     Optional<User> findByReferralCode(String referralCode);
+
+    /** ADMIN STATS: users who signed up with someone's referral code. */
+    long countByReferredByIsNotNull();
+
+    /** ADMIN STATS: referrals that converted (invitee made a first payment). */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT COALESCE(SUM(u.referralCount), 0) FROM User u")
+    long totalCreditedReferrals();
 }

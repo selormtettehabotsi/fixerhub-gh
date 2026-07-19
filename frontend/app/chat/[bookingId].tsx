@@ -16,7 +16,7 @@ import { useLocalSearchParams, useFocusEffect, Stack, router } from 'expo-router
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Client } from '@stomp/stompjs';
-import client from '../../src/api/client';
+import client, { getFreshAccessToken } from '../../src/api/client';
 import { getUserPublic } from '../../src/api/auth';
 import { markConversationRead } from '../../src/utils/chatUnread';
 import { useUnread } from '../../src/context/UnreadContext';
@@ -133,25 +133,24 @@ export default function ChatScreen() {
     if (stompReady.current) return; // already connected
     stompReady.current = true;
 
-    let stomp: Client | null = null;
-    let cancelled = false;
-
-    (async () => {
-      // SECURITY (N1): the server rejects unauthenticated STOMP connections.
-      const tokenStorage = await import('../../src/utils/tokenStorage');
-      const token = await tokenStorage.getItem('token');
-      if (cancelled) return;
-
-      stomp = new Client({
+    // SECURITY (N1): the server rejects unauthenticated STOMP connections.
+    // FIX (chat couldn't connect/send): access tokens live only 15 min, so we
+    // must fetch a *fresh* token before EVERY connect attempt (initial +
+    // automatic reconnects). Previously the client retried forever with the
+    // same expired JWT, which the server rejected with a generic STOMP ERROR.
+    const stomp: Client = new Client({
       brokerURL: WS_URL,
-      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
       reconnectDelay: 5000,
       forceBinaryWSFrames: true,
       appendMissingNULLonIncoming: true,
+      beforeConnect: async () => {
+        const token = await getFreshAccessToken();
+        stomp.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      },
       onConnect: () => {
         setConnected(true);
         // New room-based topic: /topic/chat/room/{conversationId}
-        stomp!.subscribe(`/topic/chat/room/${roomId}`, (frame) => {
+        stomp.subscribe(`/topic/chat/room/${roomId}`, (frame) => {
           const message: ChatMessage = JSON.parse(frame.body);
           markConversationRead(roomId);   // screen is open — incoming counts as read
           // If we still don't have a name for the other person, grab it from their message
@@ -181,16 +180,17 @@ export default function ChatScreen() {
       },
       onStompError: (frame) => {
         setConnected(false);
-        console.error('STOMP error', frame);
+        // Expired/invalid token or access denied — the reconnect loop will
+        // retry with a freshly refreshed token via beforeConnect above.
+        console.warn('STOMP error:', frame.headers?.message ?? 'connection rejected');
       },
-      });
+      onWebSocketError: () => setConnected(false),
+    });
 
-      stomp.activate();
-      stompRef.current = stomp;
-    })();
+    stomp.activate();
+    stompRef.current = stomp;
 
     return () => {
-      cancelled = true;
       stompReady.current = false;
       stompRef.current?.deactivate();
     };
@@ -371,6 +371,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 12,
+    // UX: raise the input WELL clear of the Android gesture/back/home zone so
+    // typing or tapping Send never accidentally leaves the app.
+    paddingBottom: Platform.OS === 'android' ? 48 : 12,
+    paddingTop: 12,
     gap: 10,
     backgroundColor: Colors.surface,
     borderTopWidth: 1,

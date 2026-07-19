@@ -54,8 +54,35 @@ public class LookupClient {
 
     /** Convenience: push to a user by id if they have a registered token. */
     public void pushToUser(PushNotificationService push, Long userId, String title, String body) {
+        pushToUser(push, userId, title, body, "SYSTEM", null);
+    }
+
+    /**
+     * NOTIFICATION CENTER: every fan-out is also recorded in the user's in-app
+     * inbox (auth-service), so history shows up even when FCM delivery isn't
+     * possible (no token / Expo Go). Then the push is sent if a token exists.
+     */
+    public void pushToUser(PushNotificationService push, Long userId, String title, String body,
+                           String type, Long bookingId) {
+        recordInbox(userId, title, body, type, bookingId);
         String token = fcmTokenForUser(userId);
         if (token != null) push.sendPush(token, title, body);
-        else log.info("No FCM token for userId={} — push '{}' skipped", userId, title);
+        else log.info("No FCM token for userId={} — push '{}' skipped (recorded in inbox)", userId, title);
+    }
+
+    /** Best-effort: failures never block the notification pipeline. */
+    public void recordInbox(Long userId, String title, String body, String type, Long bookingId) {
+        if (userId == null) return;
+        try {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("userId", userId);
+            payload.put("title", title);
+            payload.put("body", body);
+            payload.put("type", type);
+            if (bookingId != null) payload.put("bookingId", bookingId);
+            restTemplate.postForEntity("http://auth-service/auth/internal/notifications", payload, Void.class);
+        } catch (Exception e) {
+            log.warn("Could not record inbox notification for userId={}: {}", userId, e.getMessage());
+        }
     }
 }

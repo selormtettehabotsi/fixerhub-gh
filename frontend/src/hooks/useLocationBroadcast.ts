@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
 import { Client } from '@stomp/stompjs';
-import * as tokenStorage from '../utils/tokenStorage';
+import { getFreshAccessToken } from '../api/client';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
 const WS_URL = BASE_URL.replace(/^http/, 'ws') + '/ws/websocket';
@@ -27,12 +27,16 @@ export function useLocationBroadcast(bookingId: number | null) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted' || cancelled) return;
 
-      const token = await tokenStorage.getItem('token');
-      if (!token || cancelled) return;
+      if (cancelled) return;
 
-      const stomp = new Client({
+      // FIX: refresh the access token before every connect attempt — a stale
+      // 15-min JWT used to make the GPS stream reconnect-loop forever.
+      const stomp: Client = new Client({
         brokerURL: WS_URL,
-        connectHeaders: { Authorization: `Bearer ${token}` },
+        beforeConnect: async () => {
+          const token = await getFreshAccessToken();
+          stomp.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+        },
         reconnectDelay: 8000,
         forceBinaryWSFrames: true,
         appendMissingNULLonIncoming: true,

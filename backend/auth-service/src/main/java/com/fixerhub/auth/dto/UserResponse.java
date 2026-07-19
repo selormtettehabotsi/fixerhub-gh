@@ -17,5 +17,7 @@ public class UserResponse {
     private String name;
     private String profilePicture;
     private String role;
+    /** MODERATION: true when the account is suspended by an admin. */
+    private Boolean suspended;
     private LocalDateTime createdAt;
 }

@@ -137,6 +137,10 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new UnauthorizedException("Invalid credentials");
         }
+        // MODERATION: suspended accounts cannot sign in.
+        if (Boolean.TRUE.equals(user.getSuspended())) {
+            throw new UnauthorizedException("Your account has been suspended. Contact FixerHub support.");
+        }
         return buildAuthResponse(user);
     }
 
@@ -453,6 +457,11 @@ public class AuthService {
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new UnauthorizedException("Account no longer exists"));
 
+        // MODERATION: suspended accounts cannot refresh their session.
+        if (Boolean.TRUE.equals(user.getSuspended())) {
+            throw new UnauthorizedException("Your account has been suspended. Contact FixerHub support.");
+        }
+
         // Rotation: the used token is revoked and a fresh one issued.
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
@@ -602,10 +611,48 @@ public class AuthService {
         }
     }
 
+    /** ADMIN STATS: referral programme totals for the dashboard. */
+    public Map<String, Long> referralStats() {
+        return Map.of(
+                "referredSignups", userRepository.countByReferredByIsNotNull(),
+                "creditedReferrals", userRepository.totalCreditedReferrals());
+    }
+
     public List<UserResponse> getAllUsers() {
         return userRepository.findAll().stream()
                 .map(this::toUserResponse)
                 .collect(Collectors.toList());
+    }
+
+    /** M2: paged variant for the admin Users screen (page/size capped at 100). */
+    public List<UserResponse> getUsersPaged(int page, int size) {
+        int cappedSize = Math.min(Math.max(size, 1), 100);
+        return userRepository.findAll(
+                        org.springframework.data.domain.PageRequest.of(
+                                Math.max(page, 0), cappedSize,
+                                org.springframework.data.domain.Sort.by("createdAt").descending()))
+                .map(this::toUserResponse)
+                .getContent();
+    }
+
+    /**
+     * MODERATION (admin): suspend/unsuspend an account. Suspending revokes all
+     * refresh tokens, so live sessions die when the 15-min access token expires.
+     */
+    @Transactional
+    public UserResponse setSuspended(Long userId, boolean suspended) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found: " + userId));
+        if (user.getRole() == User.Role.ADMIN) {
+            throw new BadRequestException("Admin accounts cannot be suspended");
+        }
+        user.setSuspended(suspended);
+        userRepository.save(user);
+        if (suspended) {
+            refreshTokenRepository.revokeAllForUser(userId);
+        }
+        log.info("User {} {} by admin", userId, suspended ? "SUSPENDED" : "unsuspended");
+        return toUserResponse(user);
     }
 
     public UserResponse getUserById(Long id) {
@@ -621,6 +668,7 @@ public class AuthService {
                 .name(user.getName())
                 .profilePicture(user.getProfilePicture())
                 .role(user.getRole().name())
+                .suspended(Boolean.TRUE.equals(user.getSuspended()))
                 .createdAt(user.getCreatedAt())
                 .build();
     }

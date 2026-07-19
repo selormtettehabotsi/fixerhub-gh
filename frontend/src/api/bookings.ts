@@ -18,6 +18,8 @@ export interface BookingPayload {
   pricingStyle?: string;
   /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY */
   recurrence?: string;
+  /** SCHEDULING: "YYYY-MM-DDTHH:mm:ss" — when the customer wants the worker to come. */
+  scheduledAt?: string;
 }
 
 export interface Booking {
@@ -41,6 +43,7 @@ export interface Booking {
   bookingImages?: string[];
   pricingStyle?: string;
   recurrence?: string;
+  scheduledAt?: string;
 }
 
 /** MILESTONES: completed-jobs count for the worker profile badge. */

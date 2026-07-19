@@ -19,11 +19,20 @@ public class AdminService {
 
     private final RestTemplate restTemplate;
 
+    /** M2: appends ?page=&size= when the caller wants a bounded page. */
+    private static String paged(String url, Integer page, int size) {
+        return page == null ? url : url + "?page=" + page + "&size=" + size;
+    }
+
     public List<Map<String, Object>> getAllUsers() {
-        log.info("Fetching all users from auth-service");
+        return getAllUsers(null, 50);
+    }
+
+    public List<Map<String, Object>> getAllUsers(Integer page, int size) {
+        log.info("Fetching users from auth-service (page={}, size={})", page, size);
         try {
             List<Map<String, Object>> users = restTemplate.exchange(
-                    "http://auth-service/auth/internal/users",
+                    paged("http://auth-service/auth/internal/users", page, size),
                     HttpMethod.GET,
                     null,
                     new ParameterizedTypeReference<List<Map<String, Object>>>() {}
@@ -36,10 +45,14 @@ public class AdminService {
     }
 
     public List<Map<String, Object>> getAllBookings() {
-        log.info("Fetching all bookings from booking-service");
+        return getAllBookings(null, 50);
+    }
+
+    public List<Map<String, Object>> getAllBookings(Integer page, int size) {
+        log.info("Fetching bookings from booking-service (page={}, size={})", page, size);
         try {
             List<Map<String, Object>> bookings = restTemplate.exchange(
-                    "http://booking-service/bookings/internal/all",
+                    paged("http://booking-service/bookings/internal/all", page, size),
                     HttpMethod.GET,
                     null,
                     new ParameterizedTypeReference<List<Map<String, Object>>>() {}
@@ -226,13 +239,74 @@ public class AdminService {
             log.warn("Could not get active worker count: {}", e.getMessage());
         }
 
+        // SUBSCRIPTIONS: active PRO workers
+        long proWorkers = 0;
+        try {
+            Map<String, Long> pro = restTemplate.exchange(
+                    "http://worker-service/workers/internal/pro-count",
+                    HttpMethod.GET, null,
+                    new ParameterizedTypeReference<Map<String, Long>>() {}
+            ).getBody();
+            proWorkers = pro != null ? pro.getOrDefault("proWorkers", 0L) : 0L;
+        } catch (Exception e) {
+            log.warn("Could not get pro worker count: {}", e.getMessage());
+        }
+
+        // REFERRALS: programme totals
+        long referredSignups = 0;
+        long creditedReferrals = 0;
+        try {
+            Map<String, Long> ref = restTemplate.exchange(
+                    "http://auth-service/auth/internal/referrals/stats",
+                    HttpMethod.GET, null,
+                    new ParameterizedTypeReference<Map<String, Long>>() {}
+            ).getBody();
+            if (ref != null) {
+                referredSignups = ref.getOrDefault("referredSignups", 0L);
+                creditedReferrals = ref.getOrDefault("creditedReferrals", 0L);
+            }
+        } catch (Exception e) {
+            log.warn("Could not get referral stats: {}", e.getMessage());
+        }
+
+        Map<String, Object> stats = new java.util.LinkedHashMap<>();
+        stats.put("totalUsers", totalUsers);
+        stats.put("totalBookings", totalBookings);
+        stats.put("totalRevenue", totalRevenue);
+        stats.put("totalCommission", totalCommission);
+        stats.put("totalWorkerPayouts", totalWorkerPayouts);
+        stats.put("activeWorkers", activeWorkers);
+        stats.put("proWorkers", proWorkers);
+        stats.put("referredSignups", referredSignups);
+        stats.put("creditedReferrals", creditedReferrals);
+        return stats;
+    }
+
+    /** ADMIN CHARTS: bookings + revenue per day for the dashboard trends. */
+    public Map<String, Object> getDailyStats(int days) {
+        List<Map<String, Object>> bookingsDaily = List.of();
+        List<Map<String, Object>> revenueDaily = List.of();
+        try {
+            bookingsDaily = restTemplate.exchange(
+                    "http://booking-service/bookings/internal/stats/daily?days=" + days,
+                    HttpMethod.GET, null,
+                    new ParameterizedTypeReference<List<Map<String, Object>>>() {}
+            ).getBody();
+        } catch (Exception e) {
+            log.warn("Could not get daily booking stats: {}", e.getMessage());
+        }
+        try {
+            revenueDaily = restTemplate.exchange(
+                    "http://payment-service/payments/internal/stats/daily?days=" + days,
+                    HttpMethod.GET, null,
+                    new ParameterizedTypeReference<List<Map<String, Object>>>() {}
+            ).getBody();
+        } catch (Exception e) {
+            log.warn("Could not get daily revenue stats: {}", e.getMessage());
+        }
         return Map.of(
-                "totalUsers", totalUsers,
-                "totalBookings", totalBookings,
-                "totalRevenue", totalRevenue,
-                "totalCommission", totalCommission,
-                "totalWorkerPayouts", totalWorkerPayouts,
-                "activeWorkers", activeWorkers
+                "bookingsDaily", bookingsDaily != null ? bookingsDaily : List.of(),
+                "revenueDaily", revenueDaily != null ? revenueDaily : List.of()
         );
     }
 }

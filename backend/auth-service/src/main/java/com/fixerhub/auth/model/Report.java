@@ -30,7 +30,14 @@ public class Report {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    private String status;     // OPEN | REVIEWING | RESOLVED
+    private String status;     // OPEN | REVIEWING | RESOLVED | DISMISSED
+
+    /** Optional note the admin leaves when resolving/dismissing. */
+    @Column(columnDefinition = "TEXT")
+    private String resolutionNote;
+
+    /** When the report was moved to RESOLVED/DISMISSED. */
+    private LocalDateTime resolvedAt;
 
     @Column(updatable = false)
     private LocalDateTime createdAt;

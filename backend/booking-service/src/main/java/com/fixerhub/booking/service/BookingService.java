@@ -44,6 +44,7 @@ public class BookingService {
                 .bookingImages(toJson(request.getBookingImages()))
                 .pricingStyle(request.getPricingStyle())
                 .recurrence(request.getRecurrence())
+                .scheduledAt(request.getScheduledAt())   // SCHEDULING: customer-chosen date/time
                 .status(Booking.Status.PENDING)
                 .build();
         return toResponse(bookingRepository.save(booking));
@@ -67,6 +68,30 @@ public class BookingService {
     public List<BookingResponse> getAllBookings() {
         return bookingRepository.findAll()
                 .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    /** M2: paged variant (newest first) for the admin Bookings screen. */
+    public List<BookingResponse> getBookingsPaged(int page, int size) {
+        return bookingRepository.findAll(
+                        org.springframework.data.domain.PageRequest.of(
+                                Math.max(0, page), Math.min(Math.max(1, size), 100),
+                                org.springframework.data.domain.Sort.by("id").descending()))
+                .map(this::toResponse).getContent();
+    }
+
+    /** ADMIN CHARTS: bookings created per day for the last `days` days
+     *  (zero-filled so the chart has a bar for every day). */
+    public List<java.util.Map<String, Object>> bookingsPerDay(int days) {
+        int d = Math.min(Math.max(days, 1), 90);
+        java.time.LocalDate start = java.time.LocalDate.now().minusDays(d - 1L);
+        java.util.Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < d; i++) counts.put(start.plusDays(i).toString(), 0L);
+        for (Object[] row : bookingRepository.countPerDaySince(start.atStartOfDay())) {
+            counts.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+        }
+        return counts.entrySet().stream()
+                .map(e -> java.util.Map.<String, Object>of("date", e.getKey(), "count", e.getValue()))
+                .collect(Collectors.toList());
     }
 
     /** MILESTONES: completed-jobs count for the public profile badge. */
@@ -241,6 +266,7 @@ public class BookingService {
                 .quoteStatus(booking.getQuoteStatus() != null ? booking.getQuoteStatus().name() : null)
                 .pricingStyle(booking.getPricingStyle())
                 .recurrence(booking.getRecurrence())
+                .scheduledAt(booking.getScheduledAt())
                 .build();
     }
 }

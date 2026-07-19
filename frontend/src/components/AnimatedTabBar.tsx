@@ -48,22 +48,26 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
 }
 
 const styles = StyleSheet.create({
+  // UX: FLOATING tab bar — lifted well clear of the Android gesture/back/home
+  // zone so users stop accidentally leaving the app when aiming for a tab.
   container: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 24,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     backgroundColor: Colors.surfaceContainerLowest,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: 88,
-    paddingBottom: 28,
-    paddingTop: 10,
+    borderRadius: 34,
+    height: 68,
+    paddingBottom: 6,
+    paddingTop: 8,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: Colors.surfaceContainerHigh,
     elevation: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
     shadowRadius: 16,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },

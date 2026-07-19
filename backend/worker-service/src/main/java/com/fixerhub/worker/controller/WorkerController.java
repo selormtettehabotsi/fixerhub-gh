@@ -316,4 +316,10 @@ public class WorkerController {
         int count = workerService.getActiveWorkerCount();
         return ResponseEntity.ok(Map.of("activeWorkers", count));
     }
+
+    /** ADMIN STATS (internal): how many workers hold an active PRO plan. */
+    @GetMapping("/internal/pro-count")
+    public ResponseEntity<Map<String, Long>> getProCount() {
+        return ResponseEntity.ok(Map.of("proWorkers", workerService.activeProCount()));
+    }
 }

@@ -18,7 +18,11 @@ public class ReportResponse {
     private String reporterName;
     private String reporterProfilePicture;
     private String category;
+    /** Booking linked to the dispute (payout hold + refund/release actions). */
+    private Long bookingId;
     private String description;
     private String status;
+    private String resolutionNote;
+    private LocalDateTime resolvedAt;
     private LocalDateTime createdAt;
 }

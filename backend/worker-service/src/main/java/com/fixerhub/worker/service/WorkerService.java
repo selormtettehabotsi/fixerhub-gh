@@ -187,6 +187,11 @@ public class WorkerService {
         return workerRepository.findAllAvailableOrUnset().size();
     }
 
+    /** ADMIN STATS: workers whose PRO plan hasn't expired yet. */
+    public long activeProCount() {
+        return workerRepository.countByPlanAndPlanExpiresAtAfter("PRO", java.time.LocalDateTime.now());
+    }
+
     @Caching(evict = {
         @CacheEvict(value = "worker", allEntries = true),
         @CacheEvict(value = "nearby", allEntries = true)

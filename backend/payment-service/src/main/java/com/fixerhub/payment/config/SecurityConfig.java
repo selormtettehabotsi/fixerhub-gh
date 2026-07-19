@@ -33,8 +33,9 @@ public class SecurityConfig {
                 .requestMatchers("/payments/internal/**").permitAll()
                 // WEBHOOK: Paystack calls this — authenticated by HMAC signature, not JWT
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/payments/webhook").permitAll()
-                // REFUNDS: admin only
+                // REFUNDS + PAYOUT RELEASE (dispute resolution): admin only
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/payments/booking/*/refund").hasRole("ADMIN")
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/payments/booking/*/release-payout").hasRole("ADMIN")
                 // SUBSCRIPTIONS: workers buy/verify their own Pro plan
                 .requestMatchers("/payments/subscription/**").hasAnyRole("WORKER", "ADMIN")
                 // Only customers can initiate or verify Paystack payments

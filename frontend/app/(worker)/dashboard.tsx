@@ -30,6 +30,7 @@ import { getWorkerByUserId, setAvailabilityByUserId, updateWorkerLocation } from
 import { useTabBar } from '../../src/context/TabBarContext';
 import { useLocationBroadcast } from '../../src/hooks/useLocationBroadcast';
 import { useLocation } from '../../src/hooks/useLocation';
+import NotificationBell from '../../src/components/NotificationBell';
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: Colors.warning,
@@ -216,6 +217,8 @@ export default function WorkerDashboard() {
             <Text style={styles.name}>{name || 'Worker'}</Text>
           </View>
         </View>
+        {/* NOTIFICATION CENTER: bell with unread badge */}
+        <NotificationBell />
         <View style={styles.availToggle}>
           <Text style={styles.availLabel}>{available ? 'Available' : 'Unavailable'}</Text>
           {toggling ? (

@@ -64,6 +64,13 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getTotalRevenue());
     }
 
+    /** ADMIN CHARTS (internal): settled revenue per day for the dashboard trend. */
+    @GetMapping("/internal/stats/daily")
+    public ResponseEntity<List<Map<String, Object>>> revenuePerDay(
+            @RequestParam(defaultValue = "14") int days) {
+        return ResponseEntity.ok(paymentService.revenuePerDay(days));
+    }
+
     /** Returns the Paystack checkout URL for a booking, creating the payment record on demand if needed. */
     @GetMapping("/booking/{bookingId}/pay-url")
     public ResponseEntity<Map<String, String>> getPayUrl(@PathVariable Long bookingId) {
@@ -90,5 +97,12 @@ public class PaymentController {
     @PostMapping("/booking/{bookingId}/refund")
     public ResponseEntity<Map<String, String>> refundPayment(@PathVariable Long bookingId) {
         return ResponseEntity.ok(paymentService.refundPayment(bookingId));
+    }
+
+    /** RELEASE PAYOUT (ADMIN): after resolving a payment dispute, re-run a
+     *  'held' (or 'failed') worker payout for a settled booking. */
+    @PostMapping("/booking/{bookingId}/release-payout")
+    public ResponseEntity<Map<String, String>> releasePayout(@PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.releasePayout(bookingId));
     }
 }

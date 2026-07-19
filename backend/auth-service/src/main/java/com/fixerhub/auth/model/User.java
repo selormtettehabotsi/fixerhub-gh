@@ -54,6 +54,9 @@ public class User {
     @Column(length = 512)
     private String fcmToken;
 
+    /** MODERATION: suspended users cannot log in or refresh tokens. */
+    private Boolean suspended;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

@@ -57,6 +57,38 @@ async function forceLogout() {
   }
 }
 
+// ── WEBSOCKET AUTH FIX ──────────────────────────────────────────────────────
+// STOMP connections can't use the axios 401-refresh interceptor, so they call
+// this instead: returns a token guaranteed to have >60s of life left,
+// refreshing it via the stored refresh token when needed. Chat/tracking were
+// stuck on "Connecting…" forever because they reconnected with an expired JWT.
+
+function jwtExpiryMs(token: string): number | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    // Hermes (RN 0.74+) provides global atob
+    const json = JSON.parse(decodeURIComponent(
+      atob(b64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    ));
+    return typeof json.exp === 'number' ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getFreshAccessToken(): Promise<string | null> {
+  const token = await tokenStorage.getItem('token');
+  if (token) {
+    const exp = jwtExpiryMs(token);
+    // Keep using it if it can't be decoded (server will judge) or has >60s left
+    if (exp === null || exp - Date.now() > 60_000) return token;
+  }
+  refreshPromise = refreshPromise ?? refreshAccessToken().finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
 function isAuthPath(url?: string): boolean {
   return !!url && (url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh'));
 }

@@ -18,4 +18,7 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
 
     @Query("SELECT w FROM Worker w WHERE w.available = true OR w.available IS NULL")
     List<Worker> findAllAvailableOrUnset();
+
+    /** ADMIN STATS: workers whose PRO plan is currently active. */
+    long countByPlanAndPlanExpiresAtAfter(String plan, java.time.LocalDateTime now);
 }

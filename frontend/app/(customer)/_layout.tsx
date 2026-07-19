@@ -39,7 +39,7 @@ export default function CustomerLayout() {
         <Tabs.Screen
           name="chats"
           options={{
-            title: 'Chat',
+            title: 'Chats',
             tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" size={size} color={color} />,
           }}
         />

@@ -62,6 +62,9 @@ export default function RootLayout() {
         <Stack.Screen name="booking/confirmed" options={{ headerShown: false }} />
         <Stack.Screen name="booking/[id]"     options={{ headerShown: true, title: 'Booking Details',   ...HEADER_STYLE }} />
         <Stack.Screen name="chat/[bookingId]" options={{ headerShown: true, title: 'Chat',              ...HEADER_STYLE }} />
+        <Stack.Screen name="notifications"    options={{ headerShown: true, title: 'Notifications',     ...HEADER_STYLE }} />
+        <Stack.Screen name="admin/users"      options={{ headerShown: true, title: 'Manage Users',      ...HEADER_STYLE }} />
+        <Stack.Screen name="admin/bookings"   options={{ headerShown: true, title: 'All Bookings',      ...HEADER_STYLE }} />
         <Stack.Screen name="help"             options={{ headerShown: false }} />
         <Stack.Screen name="report"           options={{ headerShown: false }} />
         <Stack.Screen name="payment/receipt"  options={{ headerShown: false }} />

@@ -7,12 +7,21 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
-import { getReports, type Report, type ReportCategory, type ReportStatus } from '../../src/api/admin';
+import {
+  getReports,
+  updateReportStatus,
+  refundBooking,
+  releaseWorkerPayout,
+  type Report,
+  type ReportCategory,
+  type ReportStatus,
+} from '../../src/api/admin';
 import { useTabBar } from '../../src/context/TabBarContext';
 import Avatar from '../../src/components/Avatar';
 
@@ -33,6 +42,7 @@ const STATUS_CONFIG: Record<ReportStatus, StatusConfig> = {
   OPEN:      { label: 'Open',      color: Colors.error,     bg: Colors.errorContainer },
   REVIEWING: { label: 'Reviewing', color: Colors.warning,   bg: 'rgba(245,124,0,0.12)' },
   RESOLVED:  { label: 'Resolved',  color: Colors.available, bg: 'rgba(46,125,50,0.1)' },
+  DISMISSED: { label: 'Dismissed', color: Colors.outline,   bg: Colors.surfaceContainerHigh },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -82,12 +92,105 @@ export default function AdminReportsScreen() {
   const displayed = filter === 'ALL' ? reports : reports.filter((r) => r.status === filter);
   const openCount = reports.filter((r) => r.status === 'OPEN').length;
 
+  // ─── Dispute actions ────────────────────────────────────────────────────────
+
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  async function changeStatus(report: Report, status: ReportStatus) {
+    setBusyId(report.id);
+    try {
+      const updated = await updateReportStatus(report.id, status);
+      setReports((prev) => prev.map((r) => (r.id === report.id ? { ...r, ...updated } : r)));
+    } catch (err: any) {
+      Alert.alert('Could not update report', err.message ?? 'Try again');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function confirmStatus(report: Report, status: ReportStatus) {
+    const labels: Record<string, string> = {
+      REVIEWING: report.status === 'OPEN' ? 'Start reviewing this report?' : 'Reopen this report?',
+      RESOLVED: 'Mark this report as resolved?' +
+        (report.category === 'PAYMENT_PROBLEM' && report.bookingId
+          ? '\n\nThis lifts the payout hold on booking #' + report.bookingId +
+            " — use 'Release payout' after to pay the worker."
+          : ''),
+      DISMISSED: 'Dismiss this report? This also lifts any payout hold.',
+    };
+    Alert.alert('Confirm', labels[status] ?? 'Update this report?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Yes', onPress: () => changeStatus(report, status) },
+    ]);
+  }
+
+  function confirmRefund(report: Report) {
+    if (!report.bookingId) return;
+    Alert.alert(
+      'Refund booking #' + report.bookingId,
+      'Full Paystack refund to the customer. Blocked if the worker has already been paid out. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Refund',
+          style: 'destructive',
+          onPress: async () => {
+            setBusyId(report.id);
+            try {
+              const res = await refundBooking(report.bookingId!);
+              Alert.alert('Refund', res.status === 'refunded' ? 'Refund initiated ✅' : `Status: ${res.status}`);
+            } catch (err: any) {
+              Alert.alert('Refund failed', err.message ?? 'Try again');
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  function confirmRelease(report: Report) {
+    if (!report.bookingId) return;
+    Alert.alert(
+      'Release payout — booking #' + report.bookingId,
+      "Pays the worker their held share via mobile money. Resolve or dismiss the report first, or it will stay held. Continue?",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Release',
+          onPress: async () => {
+            setBusyId(report.id);
+            try {
+              const res = await releaseWorkerPayout(report.bookingId!);
+              const msg: Record<string, string> = {
+                released: 'Worker payout sent ✅',
+                already_paid: 'Worker was already paid.',
+                still_held: 'Still held — the dispute is not resolved/dismissed yet.',
+                in_progress: 'A payout is already processing.',
+                failed: 'Payout failed — check payment-service logs.',
+              };
+              Alert.alert('Release payout', msg[res.status] ?? `Status: ${res.status}`);
+            } catch (err: any) {
+              Alert.alert('Release failed', err.message ?? 'Try again');
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   // ─── Render item ────────────────────────────────────────────────────────────
 
   function renderReport({ item }: { item: Report }) {
     const cat = CATEGORY_CONFIG[item.category] ?? CATEGORY_CONFIG.OTHER;
     const st  = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OPEN;
     const displayName = item.reporterName || item.reporterEmail || '?';
+    const busy = busyId === item.id;
+    const isPaymentDispute = item.category === 'PAYMENT_PROBLEM' && !!item.bookingId;
+    const closed = item.status === 'RESOLVED' || item.status === 'DISMISSED';
 
     return (
       <View style={styles.card}>
@@ -103,17 +206,84 @@ export default function AdminReportsScreen() {
           </View>
         </View>
 
-        {/* Category chip + date */}
+        {/* Category chip + booking + date */}
         <View style={styles.metaRow}>
-          <View style={[styles.catChip, { backgroundColor: cat.bg }]}>
-            <Ionicons name={cat.icon} size={12} color={cat.color} />
-            <Text style={[styles.catText, { color: cat.color }]}>{cat.label}</Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <View style={[styles.catChip, { backgroundColor: cat.bg }]}>
+              <Ionicons name={cat.icon} size={12} color={cat.color} />
+              <Text style={[styles.catText, { color: cat.color }]}>{cat.label}</Text>
+            </View>
+            {item.bookingId ? (
+              <View style={[styles.catChip, { backgroundColor: Colors.surfaceContainerHigh }]}>
+                <Ionicons name="briefcase-outline" size={12} color={Colors.onSurfaceVariant} />
+                <Text style={[styles.catText, { color: Colors.onSurfaceVariant }]}>Booking #{item.bookingId}</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
         </View>
 
         {/* Description */}
         <Text style={styles.description}>{item.description}</Text>
+
+        {item.resolutionNote ? (
+          <Text style={styles.resolutionNote}>Note: {item.resolutionNote}</Text>
+        ) : null}
+
+        {/* DISPUTE RESOLUTION: lifecycle + payment actions */}
+        <View style={styles.actionRow}>
+          {busy ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <>
+              {item.status === 'OPEN' && (
+                <TouchableOpacity style={styles.actionBtn} onPress={() => confirmStatus(item, 'REVIEWING')}>
+                  <Ionicons name="eye-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.actionText}>Review</Text>
+                </TouchableOpacity>
+              )}
+              {!closed && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnResolve]}
+                    onPress={() => confirmStatus(item, 'RESOLVED')}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={14} color="#2e7d32" />
+                    <Text style={[styles.actionText, { color: '#2e7d32' }]}>Resolve</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => confirmStatus(item, 'DISMISSED')}>
+                    <Ionicons name="close-circle-outline" size={14} color={Colors.onSurfaceVariant} />
+                    <Text style={[styles.actionText, { color: Colors.onSurfaceVariant }]}>Dismiss</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              {closed && (
+                <TouchableOpacity style={styles.actionBtn} onPress={() => confirmStatus(item, 'REVIEWING')}>
+                  <Ionicons name="refresh-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.actionText}>Reopen</Text>
+                </TouchableOpacity>
+              )}
+              {isPaymentDispute && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnDanger]}
+                    onPress={() => confirmRefund(item)}
+                  >
+                    <Ionicons name="arrow-undo-outline" size={14} color={Colors.error} />
+                    <Text style={[styles.actionText, { color: Colors.error }]}>Refund</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnResolve]}
+                    onPress={() => confirmRelease(item)}
+                  >
+                    <Ionicons name="cash-outline" size={14} color="#2e7d32" />
+                    <Text style={[styles.actionText, { color: '#2e7d32' }]}>Release payout</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
+        </View>
       </View>
     );
   }
@@ -126,6 +296,7 @@ export default function AdminReportsScreen() {
     { key: 'OPEN', label: `Open (${openCount})` },
     { key: 'REVIEWING', label: 'Reviewing' },
     { key: 'RESOLVED', label: 'Resolved' },
+    { key: 'DISMISSED', label: 'Dismissed' },
   ];
 
   return (
@@ -246,4 +417,22 @@ const styles = StyleSheet.create({
   dateText: { fontSize: 12, color: Colors.outline, fontFamily: 'Inter_400Regular' },
 
   description: { fontSize: 14, color: Colors.onSurface, fontFamily: 'Inter_400Regular', lineHeight: 20 },
+  resolutionNote: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', marginTop: 8, fontStyle: 'italic' },
+
+  // Dispute action buttons
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, alignItems: 'center' },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: Colors.surfaceContainerHigh,
+  },
+  actionBtnResolve: { backgroundColor: 'rgba(46,125,50,0.08)', borderColor: 'rgba(46,125,50,0.25)' },
+  actionBtnDanger: { backgroundColor: 'rgba(211,47,47,0.06)', borderColor: 'rgba(211,47,47,0.25)' },
+  actionText: { fontSize: 12, fontWeight: '600', color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
 });

@@ -37,4 +37,6 @@ public class BookingResponse {
     private String        pricingStyle;
     /** RETENTION: NONE | WEEKLY | BIWEEKLY | MONTHLY */
     private String        recurrence;
+    /** SCHEDULING: when the customer asked the worker to come. */
+    private LocalDateTime scheduledAt;
 }

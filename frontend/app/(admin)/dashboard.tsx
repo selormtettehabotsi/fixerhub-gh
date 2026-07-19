@@ -14,11 +14,47 @@ import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
-import { getAdminStats, AdminStats } from '../../src/api/admin';
+import { getAdminStats, getAdminDailyStats, AdminStats, DailyStats, DailyPoint } from '../../src/api/admin';
 import StatCard from '../../src/components/StatCard';
+
+/** Hand-rolled bar chart — no chart library needed. */
+function BarChart({ points, valueKey, color, formatValue }: {
+  points: DailyPoint[];
+  valueKey: 'count' | 'amount';
+  color: string;
+  formatValue: (v: number) => string;
+}) {
+  const values = points.map((p) => Number(p[valueKey] ?? 0));
+  const max = Math.max(...values, 1);
+  const total = values.reduce((a, b) => a + b, 0);
+  return (
+    <View>
+      <Text style={chartStyles.total}>{formatValue(total)} in the last {points.length} days</Text>
+      <View style={chartStyles.row}>
+        {points.map((p, i) => (
+          <View key={p.date} style={chartStyles.barCol}>
+            <View style={[chartStyles.bar, { height: Math.max(3, (values[i] / max) * 72), backgroundColor: values[i] > 0 ? color : Colors.surfaceContainerHigh }]} />
+            {(i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2)) && (
+              <Text style={chartStyles.dayLabel}>{p.date.slice(8)}/{p.date.slice(5, 7)}</Text>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const chartStyles = StyleSheet.create({
+  total: { fontSize: 12, color: Colors.onSurfaceVariant, fontFamily: 'Inter_500Medium', marginBottom: 8 },
+  row: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 92 },
+  barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  bar: { width: '80%', borderRadius: 3 },
+  dayLabel: { fontSize: 9, color: Colors.outline, marginTop: 3, fontFamily: 'Inter_400Regular' },
+});
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [daily, setDaily] = useState<DailyStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +63,12 @@ export default function AdminDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminStats();
+      const [data, dailyData] = await Promise.all([
+        getAdminStats(),
+        getAdminDailyStats(14).catch(() => null),   // charts are best-effort
+      ]);
       setStats(data);
+      if (dailyData) setDaily(dailyData);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -57,6 +97,7 @@ export default function AdminDashboard() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
         <View style={styles.header}>
@@ -87,6 +128,20 @@ export default function AdminDashboard() {
           </View>
         )}
 
+        {/* MODERATION: quick access to the full user & booking registers */}
+        <View style={styles.quickRow}>
+          <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/admin/users')} activeOpacity={0.8}>
+            <Ionicons name="people" size={20} color={Colors.primary} />
+            <Text style={styles.quickText}>Manage Users</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.outline} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/admin/bookings')} activeOpacity={0.8}>
+            <Ionicons name="briefcase" size={20} color={Colors.primary} />
+            <Text style={styles.quickText}>All Bookings</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.outline} />
+          </TouchableOpacity>
+        </View>
+
         {stats && (
           <>
             <Text style={styles.sectionTitle}>Key Metrics</Text>
@@ -98,6 +153,42 @@ export default function AdminDashboard() {
               <StatCard title="Total Bookings" value={stats.totalBookings} subtitle="All time" accent={Colors.secondary} />
               <StatCard title="Revenue" value={`GH₵ ${stats.totalRevenue?.toFixed(2) ?? '0.00'}`} subtitle="Total collected" accent={Colors.primary} />
             </View>
+
+            {/* SUBSCRIPTIONS + REFERRALS: growth programme visibility */}
+            <Text style={styles.sectionTitle}>Growth</Text>
+            <View style={styles.statsGrid}>
+              <StatCard title="Pro Workers" value={stats.proWorkers ?? 0} subtitle="Active subscriptions" accent="#B8860B" />
+              <StatCard
+                title="Referrals"
+                value={`${stats.creditedReferrals ?? 0}/${stats.referredSignups ?? 0}`}
+                subtitle="Converted / signed up"
+                accent={Colors.secondary}
+              />
+            </View>
+
+            {/* CHARTS: 14-day trends */}
+            {daily && daily.bookingsDaily.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Bookings — last 14 days</Text>
+                <View style={styles.chartCard}>
+                  <BarChart
+                    points={daily.bookingsDaily}
+                    valueKey="count"
+                    color={Colors.primary}
+                    formatValue={(v) => `${v} booking${v === 1 ? '' : 's'}`}
+                  />
+                </View>
+                <Text style={styles.sectionTitle}>Revenue — last 14 days</Text>
+                <View style={styles.chartCard}>
+                  <BarChart
+                    points={daily.revenueDaily}
+                    valueKey="amount"
+                    color="#2e7d32"
+                    formatValue={(v) => `GH₵ ${v.toFixed(2)}`}
+                  />
+                </View>
+              </>
+            )}
 
             <Text style={styles.sectionTitle}>Commission Summary</Text>
             <View style={styles.commissionCard}>
@@ -142,4 +233,29 @@ const styles = StyleSheet.create({
   commLabel: { fontSize: 16, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
   commValue: { fontSize: 16, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
   divider: { height: 1, backgroundColor: Colors.surfaceContainerLow },
+
+  quickRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginTop: 12 },
+  quickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  quickText: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
+  chartCard: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: 14,
+    padding: 16,
+  },
 });

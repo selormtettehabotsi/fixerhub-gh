@@ -58,6 +58,8 @@ public class SecurityConfig {
                         // reports — any logged-in user can submit; only admin can list
                         .requestMatchers(HttpMethod.POST, "/auth/reports").hasAnyRole("CUSTOMER", "WORKER", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/auth/reports").hasRole("ADMIN")
+                        // dispute resolution — admin moves reports through their lifecycle
+                        .requestMatchers(HttpMethod.PUT, "/auth/reports/*/status").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter,

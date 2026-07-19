@@ -41,6 +41,10 @@ public class NotificationService {
         pushNotificationService.sendPush(customerToken,
                 "Payment Confirmed ✓",
                 "GH₵" + amount + " paid for your " + serviceType + " booking");
+        // NOTIFICATION CENTER: keep a copy in the in-app inbox
+        lookupClient.recordInbox(req.getCustomerUserId(), "Payment Confirmed ✓",
+                "GH₵" + amount + " paid for your " + serviceType + " booking",
+                "PAYMENT", req.getBookingId());
 
         // 4. FCM push to worker
         String workerToken = realToken(req.getWorkerFcmToken()) != null
@@ -49,6 +53,9 @@ public class NotificationService {
         pushNotificationService.sendPush(workerToken,
                 "Payment Received 💰",
                 "GH₵" + workerAmt + " for " + serviceType + " job (Booking #" + req.getBookingId() + ")");
+        lookupClient.recordInbox(req.getWorkerUserId(), "Payment Received 💰",
+                "GH₵" + workerAmt + " for " + serviceType + " job (Booking #" + req.getBookingId() + ")",
+                "PAYMENT", req.getBookingId());
 
         log.info("Payment receipt processed for bookingId={}", req.getBookingId());
     }

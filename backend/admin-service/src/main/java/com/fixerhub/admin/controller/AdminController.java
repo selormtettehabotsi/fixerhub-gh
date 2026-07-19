@@ -16,18 +16,29 @@ public class AdminController {
     private final AdminService adminService;
 
     @GetMapping("/users")
-    public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
-        return ResponseEntity.ok(adminService.getAllUsers());
+    public ResponseEntity<List<Map<String, Object>>> getAllUsers(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(adminService.getAllUsers(page, size));
     }
 
     @GetMapping("/bookings")
-    public ResponseEntity<List<Map<String, Object>>> getAllBookings() {
-        return ResponseEntity.ok(adminService.getAllBookings());
+    public ResponseEntity<List<Map<String, Object>>> getAllBookings(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(adminService.getAllBookings(page, size));
     }
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getDashboardStats() {
         return ResponseEntity.ok(adminService.getDashboardStats());
+    }
+
+    /** ADMIN CHARTS: bookings + revenue per day for the dashboard trends. */
+    @GetMapping("/stats/daily")
+    public ResponseEntity<Map<String, Object>> getDailyStats(
+            @RequestParam(defaultValue = "14") int days) {
+        return ResponseEntity.ok(adminService.getDailyStats(days));
     }
 
     @GetMapping("/workers")

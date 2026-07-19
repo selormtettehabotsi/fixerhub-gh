@@ -118,6 +118,54 @@ public class PaymentService {
         return Map.of("status", "refunded", "paystackRefundStatus", refundStatus);
     }
 
+    // ── Admin charts ────────────────────────────────────────────────────────
+
+    /** ADMIN CHARTS: settled revenue per day for the last `days` days (zero-filled). */
+    public java.util.List<Map<String, Object>> revenuePerDay(int days) {
+        int d = Math.min(Math.max(days, 1), 90);
+        java.time.LocalDate start = java.time.LocalDate.now().minusDays(d - 1L);
+        java.util.Map<String, BigDecimal> totals = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < d; i++) totals.put(start.plusDays(i).toString(), BigDecimal.ZERO);
+        for (Object[] row : paymentRepository.revenuePerDaySince(start.atStartOfDay())) {
+            totals.put(String.valueOf(row[0]), new BigDecimal(String.valueOf(row[1])));
+        }
+        return totals.entrySet().stream()
+                .map(e -> Map.<String, Object>of("date", e.getKey(), "amount", e.getValue()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    // ── Payout release (dispute resolution) ─────────────────────────────────
+
+    /**
+     * DISPUTE RESOLUTION (admin only): re-runs the worker payout for a settled
+     * payment whose payout is 'held' (open dispute) or 'failed'. The payout
+     * pipeline re-checks the dispute status with auth-service, so if the
+     * report is still open the payout simply goes back to 'held'.
+     */
+    public Map<String, String> releasePayout(Long bookingId) {
+        Payment payment = paymentRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new NotFoundException("Payment not found for booking " + bookingId));
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
+            throw new BadRequestException(
+                    "No settled payment to pay out (payment status: " + payment.getStatus() + ")");
+        }
+        String before = payment.getPayoutStatus();
+        if ("success".equalsIgnoreCase(before)) {
+            return Map.of("status", "already_paid", "payoutStatus", "success");
+        }
+        if ("processing".equalsIgnoreCase(before)) {
+            return Map.of("status", "in_progress", "payoutStatus", "processing");
+        }
+        initiateWorkerPayout(payment);
+        String after = payment.getPayoutStatus() == null ? "unknown" : payment.getPayoutStatus();
+        String status = switch (after) {
+            case "success" -> "released";
+            case "held" -> "still_held";      // dispute still open on auth-service
+            default -> after;                  // failed / unknown
+        };
+        return Map.of("status", status, "payoutStatus", after);
+    }
+
     // ── Inner DTOs ──────────────────────────────────────────────────────────
 
     @Data

@@ -408,6 +408,16 @@ export default function BookingDetailScreen() {
               ? `GH₵ ${booking.minAmount} – GH₵ ${booking.maxAmount}`
               : `GH₵ ${booking.amount ?? 0}`}
           />
+          {/* SCHEDULING: when the customer asked the worker to come */}
+          {booking.scheduledAt && (
+            <DetailRow
+              icon="time-outline"
+              label="Scheduled for"
+              value={new Date(booking.scheduledAt).toLocaleString('en-GB', {
+                weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+              })}
+            />
+          )}
           {booking.createdAt && (
             <DetailRow icon="calendar-outline" label="Booked" value={new Date(booking.createdAt).toLocaleDateString()} />
           )}

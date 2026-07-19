@@ -55,4 +55,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
            "GROUP BY p.workerId")
     List<Object[]> earningsByWorkerSince(@Param("since") java.time.LocalDateTime since,
                                          @Param("status") PaymentStatus status);
+
+    /** ADMIN CHARTS: settled revenue per calendar day since the given moment. */
+    @Query(value = "SELECT CAST(created_at AS date) AS day, COALESCE(SUM(amount), 0) AS total " +
+                   "FROM payments WHERE status = 'SUCCESS' AND created_at >= :since " +
+                   "GROUP BY CAST(created_at AS date) ORDER BY day",
+           nativeQuery = true)
+    List<Object[]> revenuePerDaySince(@Param("since") java.time.LocalDateTime since);
 }

@@ -58,7 +58,8 @@ public class NotificationConsumer {
                 Long cid = customerId != null ? customerId : lookupClient.customerIdForBooking(bookingId);
                 lookupClient.pushToUser(pushNotificationService, cid,
                         "Job complete ✅",
-                        "Your booking #" + bookingId + " is done. Open FixerHub to pay and leave a review.");
+                        "Your booking #" + bookingId + " is done. Open FixerHub to pay and leave a review.",
+                        "BOOKING", bookingId);
             }
             case "STATUS_UPDATE" -> {
                 log.info("Booking #{} status changed to {}", bookingId, status);
@@ -71,14 +72,16 @@ public class NotificationConsumer {
                 if (statusMsg != null) {
                     // PUSH: the "phone buzzes when the worker accepts" moment
                     Long cid = customerId != null ? customerId : lookupClient.customerIdForBooking(bookingId);
-                    lookupClient.pushToUser(pushNotificationService, cid, "FixerHub", statusMsg);
+                    lookupClient.pushToUser(pushNotificationService, cid, "FixerHub", statusMsg,
+                            "BOOKING", bookingId);
                 }
             }
             case "QUOTE_SUBMITTED" -> {
                 Long cid = customerId != null ? customerId : lookupClient.customerIdForBooking(bookingId);
                 lookupClient.pushToUser(pushNotificationService, cid,
                         "New quote received",
-                        "Your worker sent a quote for booking #" + bookingId + ". Open FixerHub to review it.");
+                        "Your worker sent a quote for booking #" + bookingId + ". Open FixerHub to review it.",
+                        "QUOTE", bookingId);
             }
             default -> log.warn("Ignoring unknown event type: {}", type);
         }
