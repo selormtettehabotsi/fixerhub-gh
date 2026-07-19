@@ -642,14 +642,23 @@ public class AuthService {
             body.add("message", message);
 
             HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(body, headers);
-            // SMS FIX: must use the plain (non-load-balanced) template for external hosts
-            String response = externalRestTemplate.postForEntity(atSmsUrl, entity, String.class).getBody();
-            // AT returns HTTP 201 even for undeliverable numbers — check the recipient status
-            if (response != null && !response.contains("Success") && !response.contains("\"statusCode\":10")) {
-                log.warn("SMS to {} not accepted by African's Talking: {}", phoneNumber, response);
+            // SMS FIX: must use the plain (non-load-balanced) RestTemplate — the
+            // @LoadBalanced one treats the AT hostname as a Eureka service and fails.
+            ResponseEntity<String> resp = externalRestTemplate.postForEntity(atSmsUrl, entity, String.class);
+            String bodyStr = resp.getBody();
+            log.info("OTP SMS to {} — AT status {} response: {}", phoneNumber, resp.getStatusCode(), bodyStr);
+
+            // Treat it as sent unless African's Talking explicitly reports a failure
+            // recipient status (400/401/403/404/40x). Matches the fire-and-log
+            // behaviour of notification-service, which works. An over-strict
+            // "must contain Success" check caused false negatives → email fallback.
+            if (bodyStr != null && (bodyStr.contains("\"statusCode\":401")   // invalid credentials
+                                 || bodyStr.contains("\"statusCode\":403")   // not allowed / blacklisted
+                                 || bodyStr.contains("\"statusCode\":404")   // invalid number
+                                 || bodyStr.contains("\"statusCode\":400"))) { // bad request
+                log.warn("SMS to {} rejected by African's Talking: {}", phoneNumber, bodyStr);
                 return false;
             }
-            log.info("OTP SMS sent to {}", phoneNumber);
             return true;
         } catch (Exception e) {
             log.error("Failed to send OTP SMS to {}: {}", phoneNumber, e.getMessage());
