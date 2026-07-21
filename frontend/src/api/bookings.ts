@@ -5,7 +5,9 @@ export interface BookingPayload {
   workerId: number;
   workerName?: string;
   serviceType: string;
-  amount: number;
+  /** AGREED PRICE: no longer sent at creation — the worker confirms the final
+   *  amount when completing the job (see updateBookingStatus finalAmount). */
+  amount?: number;
   minAmount?: number;
   maxAmount?: number;
   notes?: string;
