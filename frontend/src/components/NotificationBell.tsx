@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import { getNotificationUnreadCount } from '../api/notifications';
  * focus + every 30s, and opens the /notifications history screen.
  */
 export default function NotificationBell({ color }: { color?: string }) {
+  const styles = useThemedStyles(makeStyles);
   const [unread, setUnread] = useState(0);
 
   const refresh = useCallback(() => {
@@ -39,7 +41,7 @@ export default function NotificationBell({ color }: { color?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   wrap: { position: 'relative', padding: 4 },
   badge: {
     position: 'absolute',

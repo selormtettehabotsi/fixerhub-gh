@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useThemedStyles } from '../src/context/ThemeContext';
 import { View, Text, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +7,7 @@ import { Colors } from '../src/constants/colors';
 import * as tokenStorage from '../src/utils/tokenStorage';
 
 export default function SplashScreen() {
+  const styles = useThemedStyles(makeStyles);
   useEffect(() => {
     const timer = setTimeout(async () => {
       const [token, role] = await Promise.all([
@@ -51,7 +53,7 @@ export default function SplashScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primary,

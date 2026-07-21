@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -39,6 +40,7 @@ const slides: { id: string; iconName: React.ComponentProps<typeof Ionicons>['nam
 ];
 
 export default function WelcomeScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -116,7 +118,7 @@ export default function WelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.surface,

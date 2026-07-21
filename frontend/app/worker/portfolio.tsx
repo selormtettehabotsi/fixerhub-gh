@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -27,6 +28,7 @@ const { width } = Dimensions.get('window');
 const ITEM_SIZE = (width - 52) / 2;
 
 export default function WorkerPortfolioScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { workerId } = useLocalSearchParams<{ workerId: string }>();
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,7 +200,7 @@ export default function WorkerPortfolioScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },

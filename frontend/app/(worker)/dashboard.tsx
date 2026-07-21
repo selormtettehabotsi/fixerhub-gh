@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -69,6 +70,7 @@ function getNextActions(status: string): { label: string; icon: string; nextStat
 }
 
 export default function WorkerDashboard() {
+  const styles = useThemedStyles(makeStyles);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [available, setAvailableState] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -99,6 +101,11 @@ export default function WorkerDashboard() {
   const [quoteAmount, setQuoteAmount] = useState('');
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  // AGREED PRICE: confirm the final amount when completing a job
+  const [completeBooking, setCompleteBooking] = useState<Booking | null>(null);
+  const [completeAmount, setCompleteAmount] = useState('');
+  const [completeSubmitting, setCompleteSubmitting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -154,10 +161,15 @@ export default function WorkerDashboard() {
       }
     };
     if (nextStatus === 'COMPLETED') {
-      Alert.alert('Mark Complete?', 'This will trigger payment processing.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Complete', onPress: doUpdate },
-      ]);
+      // AGREED PRICE: open the confirm-amount sheet instead of completing blindly.
+      const b = bookings.find((x) => x.id === bookingId) ?? null;
+      const preset =
+        (b?.quotedAmount && b.quotedAmount > 0 ? b.quotedAmount : undefined) ??
+        (b?.amount && b.amount > 0 ? b.amount : undefined) ??
+        (b?.minAmount && b?.maxAmount ? Math.round((b.minAmount + b.maxAmount) / 2) : undefined);
+      setCompleteAmount(preset != null ? String(preset) : '');
+      setCompleteError(null);
+      setCompleteBooking(b);
     } else if (nextStatus === 'CANCELLED') {
       // Declining a job offer — destructive, so confirm first
       Alert.alert('Decline this job?', 'The booking will be cancelled and the customer can hire someone else.', [
@@ -166,6 +178,27 @@ export default function WorkerDashboard() {
       ]);
     } else {
       doUpdate();
+    }
+  }
+
+  async function handleCompleteJob() {
+    if (!completeBooking) return;
+    const amount = Number(completeAmount);
+    if (!completeAmount.trim() || isNaN(amount) || amount <= 0) {
+      setCompleteError('Enter the final agreed amount.');
+      return;
+    }
+    setCompleteSubmitting(true);
+    setCompleteError(null);
+    try {
+      await updateBookingStatus(completeBooking.id, 'COMPLETED', amount);
+      setBookings((prev) => prev.map((b) => b.id === completeBooking.id ? { ...b, status: 'COMPLETED', amount } : b));
+      setCompleteBooking(null);
+      setCompleteAmount('');
+    } catch (err: any) {
+      setCompleteError(err.message ?? 'Could not complete the job.');
+    } finally {
+      setCompleteSubmitting(false);
     }
   }
 
@@ -413,11 +446,62 @@ export default function WorkerDashboard() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* AGREED PRICE: confirm the final amount before completing → this is what
+          the customer is charged on Paystack. */}
+      <Modal visible={!!completeBooking} animationType="slide" transparent onRequestClose={() => setCompleteBooking(null)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Final Price</Text>
+              <TouchableOpacity onPress={() => setCompleteBooking(null)}>
+                <Ionicons name="close" size={24} color={Colors.onSurface} />
+              </TouchableOpacity>
+            </View>
+            {completeBooking && (
+              <Text style={styles.modalSub}>
+                {completeBooking.serviceType} · Booking {formatBookingId(completeBooking.id)}
+                {completeBooking.minAmount && completeBooking.maxAmount
+                  ? `  ·  budget GH₵${completeBooking.minAmount}–${completeBooking.maxAmount}`
+                  : ''}
+              </Text>
+            )}
+            <Text style={styles.modalSub}>
+              Enter the amount you agreed with the customer. This is exactly what they'll be charged.
+            </Text>
+            {completeError && (
+              <View style={styles.quoteErrorBox}>
+                <Text style={styles.quoteErrorText}>{completeError}</Text>
+              </View>
+            )}
+            <Text style={styles.inputLabel}>Final Amount (GH₵)</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="cash-outline" size={16} color={Colors.outline} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.input}
+                value={completeAmount}
+                onChangeText={setCompleteAmount}
+                placeholder="e.g. 250"
+                placeholderTextColor={Colors.outline}
+                keyboardType="numeric"
+                autoFocus
+              />
+            </View>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleCompleteJob} disabled={completeSubmitting} activeOpacity={0.85}>
+              {completeSubmitting ? (
+                <ActivityIndicator color={Colors.onPrimary} />
+              ) : (
+                <Text style={styles.submitBtnText}>Complete & Request Payment</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },

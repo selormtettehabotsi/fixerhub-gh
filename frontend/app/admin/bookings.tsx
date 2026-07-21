@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -27,6 +28,7 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
 
 /** ADMIN — Bookings: paged, filterable list of every booking on the platform. */
 export default function AdminBookingsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -132,7 +134,7 @@ export default function AdminBookingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingTop: 12 },
   filterBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: Colors.surfaceContainerLow },

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -60,6 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function BookingDetailScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { id, bookingNumber } = useLocalSearchParams<{ id: string; bookingNumber?: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
@@ -765,6 +767,7 @@ export default function BookingDetailScreen() {
 }
 
 function DetailRow({ icon, label, value }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; value: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.detailRow}>
       <Ionicons name={icon} size={18} color={Colors.primary} style={styles.detailIcon} />
@@ -779,6 +782,7 @@ function DetailRow({ icon, label, value }: { icon: React.ComponentProps<typeof I
 function ReceiptRow({ label, value, bold, mono }: {
   label: string; value: string; bold?: boolean; mono?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.receiptRow}>
       <Text style={styles.receiptLabel}>{label}</Text>
@@ -791,7 +795,7 @@ function ReceiptRow({ label, value, bold, mono }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container:       { flex: 1, backgroundColor: Colors.surface },
   center:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.surface },
   errorText:       { color: Colors.error, fontFamily: 'Inter_400Regular', fontSize: 15 },

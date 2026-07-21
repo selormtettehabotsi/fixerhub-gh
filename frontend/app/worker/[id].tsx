@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -34,6 +35,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function WorkerProfileScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const [worker, setWorker] = useState<Worker | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -298,6 +300,7 @@ export default function WorkerProfileScreen() {
 // ── ReviewCard ────────────────────────────────────────────────────────────────
 
 function ReviewCard({ review }: { review: Review }) {
+  const styles = useThemedStyles(makeStyles);
   const displayName = review.customerName || (review.customerId ? `Customer ${review.customerId}` : 'Customer');
 
   return (
@@ -328,7 +331,7 @@ function ReviewCard({ review }: { review: Review }) {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, padding: 24 },
   errorText: { fontSize: 16, color: Colors.error, textAlign: 'center', marginBottom: 16 },

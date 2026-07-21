@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 
@@ -11,6 +12,7 @@ interface StatCardProps {
 }
 
 export default function StatCard({ title, value, subtitle, accent, icon }: StatCardProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.card}>
       {icon && <Text style={styles.icon}>{icon}</Text>}
@@ -21,7 +23,7 @@ export default function StatCard({ title, value, subtitle, accent, icon }: StatC
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: 12,

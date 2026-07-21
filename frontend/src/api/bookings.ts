@@ -62,8 +62,16 @@ export async function updateBooking(id: number | string, payload: Partial<Bookin
   return res.data;
 }
 
-export async function updateBookingStatus(id: number | string, status: string): Promise<Booking> {
-  const res = await client.put<Booking>(`/bookings/${id}/status`, { status });
+/** Update a booking's status. When completing, pass `finalAmount` — the agreed
+ *  price the worker confirms, which becomes exactly what the customer is charged. */
+export async function updateBookingStatus(
+  id: number | string,
+  status: string,
+  finalAmount?: number
+): Promise<Booking> {
+  const body: Record<string, unknown> = { status };
+  if (finalAmount != null) body.finalAmount = finalAmount;
+  const res = await client.put<Booking>(`/bookings/${id}/status`, body);
   return res.data;
 }
 

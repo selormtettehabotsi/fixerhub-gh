@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 import { cloudinaryThumb } from '../utils/imageUrl';
@@ -25,6 +26,7 @@ function getInitials(name: string): string {
  * otherwise shows the first two initials of `name` on a primary-coloured circle.
  */
 export default function Avatar({ uri, name, size = 44 }: AvatarProps) {
+  const styles = useThemedStyles(makeStyles);
   const radius = size / 2;
   const fontSize = Math.round(size * 0.36);
 
@@ -45,7 +47,7 @@ export default function Avatar({ uri, name, size = 44 }: AvatarProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   circle: {
     backgroundColor: Colors.primary,
     alignItems: 'center',

@@ -7,6 +7,7 @@ import { useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, Plus
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Ionicons } from '@expo/vector-icons';
 import { UnreadProvider } from '../src/context/UnreadContext';
+import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 import { Colors } from '../src/constants/colors';
 
 SplashScreen.preventAutoHideAsync();
@@ -19,15 +20,6 @@ function BackButton() {
     </TouchableOpacity>
   );
 }
-
-// Shared header style — Colors is already resolved (saved preference is read
-// synchronously in constants/colors.ts before any module builds styles).
-const HEADER_STYLE = {
-  headerStyle: { backgroundColor: Colors.primary },
-  headerTintColor: '#ffffff',
-  headerBackTitle: '',
-  headerLeft: () => <BackButton />,
-};
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -47,8 +39,30 @@ export default function RootLayout() {
 
   if (!fontsLoaded) return null;
 
+  // THEMING v2: ThemeProvider is outermost so a theme switch repaints everything.
   return (
-    <UnreadProvider>
+    <ThemeProvider>
+      <UnreadProvider>
+        <RootNavigator />
+      </UnreadProvider>
+    </ThemeProvider>
+  );
+}
+
+function RootNavigator() {
+  // Subscribe to the theme so the shared header color repaints on a live switch.
+  const { version } = useTheme();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _v = version;
+  const HEADER_STYLE = {
+    headerStyle: { backgroundColor: Colors.primary },
+    headerTintColor: '#ffffff',
+    headerBackTitle: '',
+    headerLeft: () => <BackButton />,
+  };
+
+  return (
+    <>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, headerBackTitle: '' }}>
         <Stack.Screen name="index" />
@@ -69,6 +83,6 @@ export default function RootLayout() {
         <Stack.Screen name="report"           options={{ headerShown: false }} />
         <Stack.Screen name="payment/receipt"  options={{ headerShown: false }} />
       </Stack>
-    </UnreadProvider>
+    </>
   );
 }

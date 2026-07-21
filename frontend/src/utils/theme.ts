@@ -1,13 +1,13 @@
 import Storage from 'expo-sqlite/kv-store';
-import { Alert, DevSettings } from 'react-native';
+import { applyPalette } from '../constants/colors';
 
 /**
  * THEME PREFERENCE — System / Light / Dark.
  *
- * The preference is read synchronously in src/constants/colors.ts at module
- * load (before any screen builds its StyleSheets), so applying a change just
- * means: save + reload the JS. DevSettings.reload() does that instantly in
- * Expo Go / dev; production builds fall back to asking for an app restart.
+ * DEPRECATED entry point. Theme switching now happens INSTANTLY through
+ * `useTheme().setPref` (src/context/ThemeContext.tsx) — no reload. These helpers
+ * remain only for any non-UI caller; they persist + apply the palette but can't
+ * trigger the React re-render, so prefer the context hook inside components.
  */
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -24,16 +24,13 @@ export async function loadThemePreference(): Promise<ThemePref> {
   return 'system';
 }
 
-/** Persist the choice and reload the app so every screen repaints.
- *  Screens capture Colors into their StyleSheets at import time, so a live
- *  repaint needs a JS reload. DevSettings.reload() does that instantly in dev
- *  (Expo Go), but is a NO-OP in a production build — there we must tell the
- *  user to reopen, otherwise tapping a theme looks like it did nothing. */
+/** Persist + apply the palette. UI code should call `useTheme().setPref` instead
+ *  (that one also repaints the screens live). */
 export function setThemePreference(pref: ThemePref) {
-  Storage.setItemSync(KEY, pref);
-  if (__DEV__ && typeof DevSettings?.reload === 'function') {
-    DevSettings.reload();
-  } else {
-    Alert.alert('Theme updated', 'Reopen FixerHub to finish applying your new theme.');
+  try {
+    Storage.setItemSync(KEY, pref);
+  } catch {
+    /* ignore */
   }
+  applyPalette(pref);
 }

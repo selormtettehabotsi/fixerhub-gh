@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -8,6 +9,7 @@ import { Colors } from '../../src/constants/colors';
 import { formatBookingId } from '../../src/utils/formatId';
 
 export default function BookingConfirmedScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { bookingId, workerName } = useLocalSearchParams<{
     bookingId: string;
     workerName: string;
@@ -68,7 +70,7 @@ export default function BookingConfirmedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   checkCircle: {

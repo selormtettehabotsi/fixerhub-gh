@@ -165,6 +165,13 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("status", "saved"));
     }
 
+    /** Internal (blocked at gateway): booking-service resolves chat-peer contact
+     *  info (name, phone, picture) for the chat header + call button. */
+    @GetMapping("/internal/users/{id}/contact")
+    public ResponseEntity<Map<String, String>> getUserContactInternal(@PathVariable Long id) {
+        return ResponseEntity.ok(authService.userContact(id));
+    }
+
     /** Internal (blocked at gateway): notification-service resolves a user's push token. */
     @GetMapping("/internal/users/{id}/fcm-token")
     public ResponseEntity<Map<String, String>> getFcmTokenInternal(@PathVariable Long id) {

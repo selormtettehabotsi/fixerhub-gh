@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import {
   View,
   Text,
@@ -25,6 +26,7 @@ interface FilterSheetProps {
 }
 
 export default function FilterSheet({ visible, onClose, onApply, currentFilters }: FilterSheetProps) {
+  const styles = useThemedStyles(makeStyles);
   const [verifiedOnly, setVerifiedOnly] = useState(currentFilters.verified ?? false);
   const [minRating, setMinRating] = useState(currentFilters.minRating ?? 0);
 
@@ -104,7 +106,7 @@ export default function FilterSheet({ visible, onClose, onApply, currentFilters 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

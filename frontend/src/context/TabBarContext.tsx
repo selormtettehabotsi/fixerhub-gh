@@ -27,7 +27,7 @@ export function TabBarProvider({ children }: { children: React.ReactNode }) {
     if (isHidden.current === hidden) return;
     isHidden.current = hidden;
     Animated.timing(translateY, {
-      toValue: hidden ? 130 : 0,  // bar height + floating bottom gap + shadow
+      toValue: hidden ? 170 : 0,  // bar height + inset-aware bottom gap + shadow
       duration: 220,
       useNativeDriver: true,
     }).start();

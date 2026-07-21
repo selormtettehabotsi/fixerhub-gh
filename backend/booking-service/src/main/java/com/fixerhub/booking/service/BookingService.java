@@ -123,6 +123,10 @@ public class BookingService {
     }
 
     public BookingResponse updateStatus(Long id, String status) {
+        return updateStatus(id, status, null);
+    }
+
+    public BookingResponse updateStatus(Long id, String status, BigDecimal finalAmount) {
         Booking booking = findOrThrow(id);
         Booking.Status newStatus;
         try {
@@ -131,6 +135,24 @@ public class BookingService {
             throw new BadRequestException("Unknown booking status: " + status);
         }
         assertTransition(booking.getStatus(), newStatus);   // N7
+
+        // AGREED PRICE: the worker confirms the final amount when completing the
+        // job. That figure becomes the booking's payable amount, so Paystack
+        // charges exactly what the worker and customer agreed — not the
+        // customer's original minimum budget.
+        if (newStatus == Booking.Status.COMPLETED) {
+            if (finalAmount != null) {
+                if (finalAmount.signum() <= 0) {
+                    throw new BadRequestException("Final amount must be greater than zero.");
+                }
+                booking.setAmount(finalAmount.setScale(2, java.math.RoundingMode.HALF_UP));
+            }
+            if (booking.getAmount() == null || booking.getAmount().signum() <= 0) {
+                throw new BadRequestException(
+                        "Enter the final agreed amount before completing this job.");
+            }
+        }
+
         booking.setStatus(newStatus);
         Booking saved = bookingRepository.save(booking);
 

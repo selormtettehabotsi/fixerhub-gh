@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -29,6 +30,7 @@ interface Conversation {
 }
 
 export default function CustomerChatsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -178,7 +180,7 @@ export default function CustomerChatsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

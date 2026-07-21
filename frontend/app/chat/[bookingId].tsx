@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -10,16 +11,20 @@ import {
   Platform,
   ActivityIndicator,
   Image,
+  Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect, Stack, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Client } from '@stomp/stompjs';
+import { Audio } from 'expo-av';
 import client, { getFreshAccessToken } from '../../src/api/client';
 import { getUserPublic } from '../../src/api/auth';
 import { markConversationRead } from '../../src/utils/chatUnread';
 import { useUnread } from '../../src/context/UnreadContext';
+import { cloudinaryThumb } from '../../src/utils/imageUrl';
 import { Colors } from '../../src/constants/colors';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
@@ -35,13 +40,23 @@ interface ChatMessage {
   senderId: string;
   senderName: string;
   text: string;
+  /** VOICE MESSAGES: Cloudinary URL of a recorded clip */
+  audioUrl?: string | null;
+  /** READ RECEIPTS: true once the other participant has read it */
+  read?: boolean;
   timestamp: number;
 }
 
+interface PeerInfo {
+  name?: string;
+  phone?: string;
+  profilePicture?: string;
+}
+
 export default function ChatScreen() {
+  const styles = useThemedStyles(makeStyles);
   // The route param is named bookingId for URL compat, but now holds the conversationId
   // e.g. "/chat/c1_w2" → bookingId = "c1_w2"
-  // otherName is optionally passed by the navigation source (worker name or customer name)
   const { bookingId: roomId, otherName: otherNameParam } = useLocalSearchParams<{ bookingId: string; otherName?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -49,16 +64,28 @@ export default function ChatScreen() {
   const [connected, setConnected] = useState(false);
   const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('');
-  // The display name and picture shown in the nav header for the other person
   const [chatTitle, setChatTitle] = useState(otherNameParam ?? 'Chat');
-  const { refresh: refreshUnread } = useUnread();
   const [otherPicture, setOtherPicture] = useState<string | null>(null);
+  const [peerPhone, setPeerPhone] = useState<string | null>(null);
+  const { refresh: refreshUnread } = useUnread();
+  // VOICE MESSAGES
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [audioBusy, setAudioBusy] = useState(false);
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const flatListRef = useRef<FlatList>(null);
   const stompRef = useRef<Client | null>(null);
-  // Track whether STOMP has been set up already (avoid double-connect on focus)
   const stompReady = useRef(false);
-  // Keep a stable ref to userId for use inside STOMP callbacks (avoids stale closures)
   const userIdRef = useRef('');
+  const focusedRef = useRef(true);
+
+  // READ RECEIPTS: tell the server we've seen everything (flips the sender's ✓ to ✓✓)
+  const markServerRead = useCallback(() => {
+    if (roomId) client.put(`/chat/room/${roomId}/read`).catch(() => {});
+  }, [roomId]);
 
   useEffect(() => {
     AsyncStorage.multiGet(['userId', 'name']).then(async (pairs) => {
@@ -66,29 +93,32 @@ export default function ChatScreen() {
       setUserId(id);
       userIdRef.current = id;
       setUserName(pairs[1][1] ?? 'You');
-
-      // Determine which user ID belongs to the other person from the conversationId
-      // Format: "c{customerId}_w{workerId}"
-      if (roomId && id) {
-        const match = roomId.match(/^c(\d+)_w(\d+)$/);
-        if (match) {
-          const customerIdStr = match[1];
-          const workerIdStr = match[2];
-          // The other person is whichever ID does NOT match our userId
-          // Note: workerId here is the worker PROFILE id, not user id.
-          // For customers, other = worker profile → fetch via worker-service (already done via otherName param)
-          // For workers, other = customer user id → fetch via auth-service
-          const otherUserId = id === customerIdStr ? null : customerIdStr;
-          if (otherUserId) {
-            try {
-              const info = await getUserPublic(otherUserId);
-              if (info.profilePicture) setOtherPicture(info.profilePicture);
-              if (!otherNameParam && info.name) setChatTitle(info.name);
-            } catch { /* ignore */ }
-          }
-        }
-      }
     });
+  }, [roomId]);
+
+  // CHAT HEADER: the other person's name, picture and phone (for the call button)
+  useEffect(() => {
+    if (!roomId) return;
+    client
+      .get<PeerInfo>(`/chat/room/${roomId}/peer`)
+      .then((res) => {
+        const p = res.data ?? {};
+        if (p.name) setChatTitle(p.name);
+        if (p.profilePicture) setOtherPicture(p.profilePicture);
+        if (p.phone) setPeerPhone(p.phone);
+      })
+      .catch(async () => {
+        // Fallback: resolve the customer's public info from the conversation id
+        const id = userIdRef.current || (await AsyncStorage.getItem('userId')) || '';
+        const match = roomId.match(/^c(\d+)_w(\d+)$/);
+        if (match && id !== match[1]) {
+          try {
+            const info = await getUserPublic(match[1]);
+            if (info.profilePicture) setOtherPicture(info.profilePicture);
+            if (!otherNameParam && info.name) setChatTitle(info.name);
+          } catch { /* ignore */ }
+        }
+      });
   }, [roomId]);
 
   // Reload history every time this screen comes into focus (handles back-navigation)
@@ -100,44 +130,40 @@ export default function ChatScreen() {
     setHistoryLoading(true);
     try {
       const res = await client.get<ChatMessage[]>(`/chat/room/${roomId}/history`);
-      // Sort by timestamp ascending so oldest messages appear at the top
       const sorted = [...(res.data ?? [])].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
       setMessages(sorted);
       // UNREAD BADGES: opening the chat clears its badge — instantly on the tab too
       markConversationRead(roomId).then(refreshUnread);
+      markServerRead();   // READ RECEIPTS
 
-      // Resolve the other person's display name from the first message they sent.
-      // Only update if we don't already have a name from the URL param.
       if (!otherNameParam && sorted.length > 0) {
-        // Use the ref (populated on mount) to avoid a stale-closure race
-        const myId = userIdRef.current || await AsyncStorage.getItem('userId') || '';
+        const myId = userIdRef.current || (await AsyncStorage.getItem('userId')) || '';
         const otherMsg = sorted.find((m) => m.senderId !== myId);
         if (otherMsg?.senderName) {
-          setChatTitle(otherMsg.senderName);
+          setChatTitle((prev) => (prev === 'Chat' ? otherMsg.senderName : prev));
         }
       }
     } catch {
-      // History unavailable — show empty chat so the user can still send messages.
-      // STOMP real-time delivery works independently of the REST history endpoint.
       setMessages([]);
     } finally {
       setHistoryLoading(false);
     }
-  }, [roomId, otherNameParam]);
+  }, [roomId, otherNameParam, markServerRead]);
 
-  useFocusEffect(useCallback(() => {
-    fetchHistory();
-  }, [fetchHistory]));
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      fetchHistory();
+      return () => { focusedRef.current = false; };
+    }, [fetchHistory])
+  );
 
   useEffect(() => {
     if (stompReady.current) return; // already connected
     stompReady.current = true;
 
-    // SECURITY (N1): the server rejects unauthenticated STOMP connections.
-    // FIX (chat couldn't connect/send): access tokens live only 15 min, so we
-    // must fetch a *fresh* token before EVERY connect attempt (initial +
-    // automatic reconnects). Previously the client retried forever with the
-    // same expired JWT, which the server rejected with a generic STOMP ERROR.
+    // SECURITY (N1) + FIX: fetch a fresh (auto-refreshed) token before EVERY
+    // connect attempt — a stale 15-min JWT used to loop "Connecting…" forever.
     const stomp: Client = new Client({
       brokerURL: WS_URL,
       reconnectDelay: 5000,
@@ -149,21 +175,33 @@ export default function ChatScreen() {
       },
       onConnect: () => {
         setConnected(true);
-        // New room-based topic: /topic/chat/room/{conversationId}
         stomp.subscribe(`/topic/chat/room/${roomId}`, (frame) => {
-          const message: ChatMessage = JSON.parse(frame.body);
+          const payload = JSON.parse(frame.body);
+
+          // READ RECEIPTS: the other person opened the chat → flip my ✓ to ✓✓
+          if (payload.receipt === 'READ') {
+            if (String(payload.readerId) !== userIdRef.current) {
+              setMessages((prev) =>
+                prev.map((m) => (m.senderId === userIdRef.current ? { ...m, read: true } : m))
+              );
+            }
+            return;
+          }
+
+          const message: ChatMessage = payload;
           markConversationRead(roomId);   // screen is open — incoming counts as read
-          // If we still don't have a name for the other person, grab it from their message
+          if (message.senderId !== userIdRef.current && focusedRef.current) {
+            markServerRead();             // tell the sender we read it immediately
+          }
           if (message.senderName && message.senderId !== userIdRef.current && !otherNameParam) {
-            setChatTitle((prev) => prev === 'Chat' ? message.senderName : prev);
+            setChatTitle((prev) => (prev === 'Chat' ? message.senderName : prev));
           }
           setMessages((prev) => {
-            // Deduplicate: skip if we already have this server ID
             if (message.id && prev.some((m) => m.id === message.id)) return prev;
-            // Replace matching optimistic message (no id, same sender+text within 10s)
             const now = Date.now();
             const optimisticIdx = prev.findIndex(
-              (m) => !m.id && m.senderId === message.senderId && m.text === message.text
+              (m) => !m.id && m.senderId === message.senderId
+                && (m.text === message.text || (!!m.audioUrl && m.audioUrl === message.audioUrl))
                 && Math.abs((m.timestamp ?? 0) - (message.timestamp ?? now)) < 10000
             );
             if (optimisticIdx >= 0) {
@@ -175,13 +213,9 @@ export default function ChatScreen() {
           });
         });
       },
-      onDisconnect: () => {
-        setConnected(false);
-      },
+      onDisconnect: () => setConnected(false),
       onStompError: (frame) => {
         setConnected(false);
-        // Expired/invalid token or access denied — the reconnect loop will
-        // retry with a freshly refreshed token via beforeConnect above.
         console.warn('STOMP error:', frame.headers?.message ?? 'connection rejected');
       },
       onWebSocketError: () => setConnected(false),
@@ -202,11 +236,25 @@ export default function ChatScreen() {
     }
   }, [messages.length]);
 
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync().catch(() => {});
+      if (recordTimer.current) clearInterval(recordTimer.current);
+    };
+  }, []);
+
+  function publish(payload: { senderName: string; text: string; audioUrl?: string }) {
+    stompRef.current?.publish({
+      destination: `/app/chat/room/${roomId}`,
+      body: JSON.stringify({ senderId: userId, ...payload }),
+    });
+  }
+
   function sendMessage() {
     const trimmed = inputText.trim();
     if (!trimmed || !connected || !stompRef.current?.connected || !userId) return;
 
-    // Optimistically show the message immediately — don't wait for STOMP echo
     const optimistic: ChatMessage = {
       senderId: userId,
       senderName: userName,
@@ -215,53 +263,188 @@ export default function ChatScreen() {
     };
     setMessages((prev) => [...prev, optimistic]);
     setInputText('');
+    publish({ senderName: userName, text: trimmed });
+  }
 
-    // New room-based destination: /app/chat/room/{conversationId}
-    stompRef.current.publish({
-      destination: `/app/chat/room/${roomId}`,
-      body: JSON.stringify({ senderId: userId, senderName: userName, text: trimmed }),
-    });
+  // ── VOICE MESSAGES ──────────────────────────────────────────────────────────
+
+  async function startRecording() {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Microphone needed', 'Allow microphone access to send voice messages.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(rec);
+      setRecordSecs(0);
+      recordTimer.current = setInterval(() => setRecordSecs((s) => s + 1), 1000);
+    } catch (e: any) {
+      Alert.alert('Recording failed', e.message ?? 'Try again');
+    }
+  }
+
+  async function stopRecording(send: boolean) {
+    const rec = recording;
+    setRecording(null);
+    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+    if (!rec) return;
+    try {
+      await rec.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = rec.getURI();
+      if (!send || !uri || recordSecs < 1) return;   // too short / cancelled
+
+      setAudioBusy(true);
+      const formData = new FormData();
+      formData.append('file', { uri, name: 'voice.m4a', type: 'audio/m4a' } as any);
+      formData.append('folder', 'chat-audio');
+      const res = await client.post<{ url: string }>('/auth/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data.url;
+
+      const optimistic: ChatMessage = {
+        senderId: userId,
+        senderName: userName,
+        text: '🎤 Voice message',
+        audioUrl: url,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      publish({ senderName: userName, text: '🎤 Voice message', audioUrl: url });
+    } catch (e: any) {
+      Alert.alert('Could not send voice message', e.message ?? 'Try again');
+    } finally {
+      setAudioBusy(false);
+      setRecordSecs(0);
+    }
+  }
+
+  async function togglePlay(item: ChatMessage) {
+    const key = item.id ? String(item.id) : `t${item.timestamp}`;
+    try {
+      if (playingKey === key) {
+        await soundRef.current?.stopAsync();
+        setPlayingKey(null);
+        return;
+      }
+      await soundRef.current?.unloadAsync().catch(() => {});
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const { sound } = await Audio.Sound.createAsync({ uri: item.audioUrl! }, { shouldPlay: true });
+      soundRef.current = sound;
+      setPlayingKey(key);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) setPlayingKey(null);
+      });
+    } catch {
+      setPlayingKey(null);
+    }
+  }
+
+  function formatSecs(s: number): string {
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  // ── Rendering ───────────────────────────────────────────────────────────────
+
+  function renderTicks(item: ChatMessage) {
+    // READ RECEIPTS on my own bubbles: ⏱ sending → ✓ sent → ✓✓ read
+    if (!item.id) return <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.7)" />;
+    return item.read
+      ? <Ionicons name="checkmark-done" size={14} color="#7CFC9B" />
+      : <Ionicons name="checkmark" size={14} color="rgba(255,255,255,0.75)" />;
   }
 
   function renderMessage({ item }: { item: ChatMessage }) {
     const isMine = item.senderId === userId;
+    const key = item.id ? String(item.id) : `t${item.timestamp}`;
     return (
       <View style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
-        {!isMine && (
-          <Text style={styles.senderName}>{item.senderName}</Text>
-        )}
+        {!isMine && <Text style={styles.senderName}>{item.senderName}</Text>}
         <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-          <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : styles.bubbleTextOther]}>
-            {item.text}
-          </Text>
-          <Text style={[styles.timeText, isMine ? styles.timeTextMine : styles.timeTextOther]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
+          {item.audioUrl ? (
+            // VOICE MESSAGE bubble
+            <TouchableOpacity style={styles.audioRow} onPress={() => togglePlay(item)} activeOpacity={0.7}>
+              <Ionicons
+                name={playingKey === key ? 'pause-circle' : 'play-circle'}
+                size={34}
+                color={isMine ? Colors.onPrimary : Colors.primary}
+              />
+              <View style={styles.audioBars}>
+                {[10, 16, 8, 18, 12, 20, 9, 15, 11].map((h, i) => (
+                  <View
+                    key={i}
+                    style={[styles.audioBar, { height: h, backgroundColor: isMine ? 'rgba(255,255,255,0.8)' : Colors.primary }]}
+                  />
+                ))}
+              </View>
+              <Text style={[styles.audioLabel, isMine ? styles.bubbleTextMine : styles.bubbleTextOther]}>
+                Voice
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : styles.bubbleTextOther]}>
+              {item.text}
+            </Text>
+          )}
+          <View style={styles.metaRow}>
+            <Text style={[styles.timeText, isMine ? styles.timeTextMine : styles.timeTextOther]}>
+              {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+            {isMine && renderTicks(item)}
+          </View>
         </View>
       </View>
     );
   }
 
   const canSend = inputText.trim().length > 0 && connected && !!userId;
+  const showMic = inputText.trim().length === 0 && connected && !!userId;
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Dynamically override the nav-bar title with the other person's name + avatar. */}
-      <Stack.Screen options={{
-        title: chatTitle,
-        headerBackTitle: '',
-        headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
-            <Ionicons name="chevron-back" size={26} color="#ffffff" />
-          </TouchableOpacity>
-        ),
-        headerRight: otherPicture ? () => (
-          <Image
-            source={{ uri: otherPicture }}
-            style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }}
-          />
-        ) : undefined,
-      }} />
+      {/* CHAT HEADER: avatar + name on the left, call button on the right */}
+      <Stack.Screen
+        options={{
+          headerBackTitle: '',
+          headerLeft: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => router.back()} style={{ paddingRight: 6, paddingVertical: 4 }}>
+                <Ionicons name="chevron-back" size={26} color="#ffffff" />
+              </TouchableOpacity>
+              {otherPicture ? (
+                <Image
+                  source={{ uri: cloudinaryThumb(otherPicture, 34) }}
+                  style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }}
+                />
+              ) : (
+                <View style={styles.headerAvatarFallback}>
+                  <Text style={styles.headerAvatarText}>
+                    {(chatTitle || '?').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ),
+          headerTitle: () => (
+            <Text style={styles.headerName} numberOfLines={1}>{chatTitle}</Text>
+          ),
+          headerRight: peerPhone
+            ? () => (
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(`tel:${peerPhone}`)}
+                  style={{ paddingHorizontal: 10, paddingVertical: 4 }}
+                >
+                  <Ionicons name="call" size={22} color="#ffffff" />
+                </TouchableOpacity>
+              )
+            : undefined,
+        }}
+      />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
@@ -298,32 +481,60 @@ export default function ChatScreen() {
         )}
 
         <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder={connected ? 'Type a message...' : 'Connecting...'}
-            placeholderTextColor={Colors.outline}
-            multiline
-            maxLength={500}
-            blurOnSubmit={false}
-            editable={connected}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={sendMessage}
-            disabled={!canSend}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="send" size={20} color={Colors.onPrimary} />
-          </TouchableOpacity>
+          {recording ? (
+            // VOICE MESSAGES: recording state — cancel / timer / send
+            <>
+              <TouchableOpacity style={styles.recCancelBtn} onPress={() => stopRecording(false)}>
+                <Ionicons name="trash-outline" size={22} color={Colors.error} />
+              </TouchableOpacity>
+              <View style={styles.recTimerBox}>
+                <View style={styles.recDot} />
+                <Text style={styles.recTimerText}>Recording… {formatSecs(recordSecs)}</Text>
+              </View>
+              <TouchableOpacity style={styles.sendBtn} onPress={() => stopRecording(true)} activeOpacity={0.8}>
+                <Ionicons name="send" size={20} color={Colors.onPrimary} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={styles.input}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={connected ? 'Type a message...' : 'Connecting...'}
+                placeholderTextColor={Colors.outline}
+                multiline
+                maxLength={500}
+                blurOnSubmit={false}
+                editable={connected}
+              />
+              {audioBusy ? (
+                <View style={styles.sendBtn}>
+                  <ActivityIndicator size="small" color={Colors.onPrimary} />
+                </View>
+              ) : showMic ? (
+                <TouchableOpacity style={styles.sendBtn} onPress={startRecording} activeOpacity={0.8}>
+                  <Ionicons name="mic" size={22} color={Colors.onPrimary} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+                  onPress={sendMessage}
+                  disabled={!canSend}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="send" size={20} color={Colors.onPrimary} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
@@ -332,6 +543,14 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', paddingVertical: 60, gap: 8 },
   emptyText: { fontSize: 18, fontWeight: '600', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_600SemiBold' },
   emptySubtext: { fontSize: 15, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
+
+  headerName: { color: '#ffffff', fontSize: 18, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
+  headerAvatarFallback: {
+    width: 34, height: 34, borderRadius: 17, marginRight: 8,
+    backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center',
+  },
+  headerAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
   msgRow: { marginBottom: 12 },
   msgRowLeft: { alignItems: 'flex-start' },
   msgRowRight: { alignItems: 'flex-end' },
@@ -364,16 +583,37 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 16, fontFamily: 'Inter_400Regular', lineHeight: 22 },
   bubbleTextMine: { color: Colors.onPrimary },
   bubbleTextOther: { color: Colors.onSurface },
-  timeText: { fontSize: 11, marginTop: 4, fontFamily: 'Inter_400Regular' },
-  timeTextMine: { color: 'rgba(255,255,255,0.7)', textAlign: 'right' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 },
+  timeText: { fontSize: 11, fontFamily: 'Inter_400Regular' },
+  timeTextMine: { color: 'rgba(255,255,255,0.7)' },
   timeTextOther: { color: Colors.outline },
+
+  // VOICE MESSAGES
+  audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
+  audioBars: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  audioBar: { width: 3, borderRadius: 2 },
+  audioLabel: { fontSize: 13, fontFamily: 'Inter_500Medium' },
+  recCancelBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.surfaceContainerHighest,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recTimerBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.surfaceContainerHighest,
+    borderRadius: 20, paddingHorizontal: 16, height: 44,
+  },
+  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.error },
+  recTimerText: { fontSize: 15, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
+
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 12,
-    // UX: raise the input WELL clear of the Android gesture/back/home zone so
-    // typing or tapping Send never accidentally leaves the app.
-    paddingBottom: Platform.OS === 'android' ? 48 : 12,
+    // UX: the SafeAreaView (edges=['bottom']) already pads past the Android
+    // nav/gesture zone, so the input only needs a small breathing gap on top of
+    // that — a big value here double-padded it and floated it too high.
+    paddingBottom: Platform.OS === 'android' ? 10 : 12,
     paddingTop: 12,
     gap: 10,
     backgroundColor: Colors.surface,

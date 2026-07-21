@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
+import { useThemedStyles } from '../context/ThemeContext';
 import { cloudinaryThumb } from '../utils/imageUrl';
 
 interface WorkerCardProps {
@@ -50,6 +51,7 @@ function WorkerCard({
   onPress,
   onChat,
 }: WorkerCardProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.card}>
       {/* ── Top: avatar + info ──────────────────────────────────── */}
@@ -133,7 +135,7 @@ export default React.memo(WorkerCard, (prev, next) =>
   (prev.onChat === undefined) === (next.onChat === undefined)
 );
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: 14,

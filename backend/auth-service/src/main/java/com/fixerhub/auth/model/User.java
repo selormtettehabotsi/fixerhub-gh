@@ -54,8 +54,12 @@ public class User {
     @Column(length = 512)
     private String fcmToken;
 
-    /** MODERATION: suspended users cannot log in or refresh tokens. */
-    private Boolean suspended;
+    /** MODERATION: suspended users cannot log in or refresh tokens.
+     *  @Builder.Default + @PrePersist guard: the DB column is NOT NULL, so a
+     *  fresh registration must never insert null here. */
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean suspended = false;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -67,6 +71,7 @@ public class User {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (suspended == null) suspended = false;   // NOT NULL column safety net
     }
 
     public enum Role {

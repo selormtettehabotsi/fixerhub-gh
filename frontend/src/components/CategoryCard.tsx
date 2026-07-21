@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
@@ -10,6 +11,7 @@ interface CategoryCardProps {
 }
 
 export default function CategoryCard({ iconName, label, onPress }: CategoryCardProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
       <Ionicons name={iconName} size={28} color={Colors.primary} style={styles.icon} />
@@ -18,7 +20,7 @@ export default function CategoryCard({ iconName, label, onPress }: CategoryCardP
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     width: 80,
     alignItems: 'center',

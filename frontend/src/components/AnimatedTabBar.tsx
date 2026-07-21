@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { Animated, TouchableOpacity, View, Text, StyleSheet, Platform } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,11 +8,16 @@ import { useUnread } from '../context/UnreadContext';
 import { Colors } from '../constants/colors';
 
 export default function AnimatedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const styles = useThemedStyles(makeStyles);
   const { translateY } = useTabBar();
   const { totalUnread } = useUnread();
+  // Distance the floating pill sits above the system nav/gesture zone.
+  // react-navigation already pads the tab-bar slot by the safe-area inset, so
+  // this is a small fixed gap on top of that. Tweak to move down/up.
+  const BOTTOM_GAP = 15;
 
   return (
-    <Animated.View style={[styles.container, { transform: [{ translateY }] }]}>
+    <Animated.View style={[styles.container, { bottom: BOTTOM_GAP, transform: [{ translateY }] }]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const isFocused = state.index === index;
@@ -47,24 +53,24 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   // UX: FLOATING tab bar — lifted well clear of the Android gesture/back/home
   // zone so users stop accidentally leaving the app when aiming for a tab.
   container: {
     position: 'absolute',
-    bottom: 24,
+    // bottom is set dynamically from the safe-area inset (see component)
     left: 16,
     right: 16,
     flexDirection: 'row',
     backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: 34,
-    height: 68,
+    height: 65,
     paddingBottom: 6,
     paddingTop: 8,
     paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: Colors.surfaceContainerHigh,
-    elevation: 16,
+    elevation: 13,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.16,

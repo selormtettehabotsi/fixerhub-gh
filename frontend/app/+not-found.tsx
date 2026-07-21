@@ -1,10 +1,12 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useThemedStyles } from '../src/context/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../src/constants/colors';
 
 export default function NotFound() {
+  const styles = useThemedStyles(makeStyles);
   return (
     <SafeAreaView style={styles.container}>
       <Ionicons name="alert-circle-outline" size={52} color={Colors.outline} />
@@ -17,7 +19,7 @@ export default function NotFound() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, padding: 24 },
   icon: { fontSize: 60, marginBottom: 16 },
   title: { fontSize: 24, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 8 },

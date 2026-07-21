@@ -611,6 +611,17 @@ public class AuthService {
         }
     }
 
+    /** CHAT HEADER (internal): peer contact info for the chat screen. */
+    public Map<String, String> userContact(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        Map<String, String> out = new java.util.HashMap<>();
+        out.put("name", user.getName());
+        out.put("phone", user.getPhone());
+        out.put("profilePicture", user.getProfilePicture());
+        return out;
+    }
+
     /** ADMIN STATS: referral programme totals for the dashboard. */
     public Map<String, Long> referralStats() {
         return Map.of(

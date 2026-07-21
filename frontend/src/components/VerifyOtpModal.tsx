@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export default function VerifyOtpModal({ visible, channel, target, onClose, onVerified }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [otp, setOtp] = useState('');
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -126,7 +128,7 @@ export default function VerifyOtpModal({ visible, channel, target, onClose, onVe
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   bg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   dismiss: { flex: 1 },
   card: {

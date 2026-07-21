@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThemedStyles } from '../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -153,6 +154,7 @@ const SECTIONS: Section[] = [
 ];
 
 export default function HelpCentreScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [open, setOpen] = useState<number | null>(0);
 
   function toggle(index: number) {
@@ -216,7 +218,7 @@ export default function HelpCentreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
 
   topBar: {

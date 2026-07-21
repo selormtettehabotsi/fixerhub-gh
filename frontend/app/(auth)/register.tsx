@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -23,6 +24,7 @@ const SKILLS = ['Plumbing', 'Electrical', 'Carpentry', 'Painting', 'Cleaning', '
 type Role = 'CUSTOMER' | 'WORKER';
 
 export default function RegisterScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [role, setRole] = useState<Role>('CUSTOMER');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -188,6 +190,7 @@ interface InputFieldProps {
 }
 
 function InputField({ label, value, onChangeText, placeholder, iconName, secureTextEntry, keyboardType, autoCapitalize }: InputFieldProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
@@ -209,7 +212,7 @@ function InputField({ label, value, onChangeText, placeholder, iconName, secureT
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   flex: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useThemedStyles, useTheme, ThemePref } from '../context/ThemeContext';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
-import { ThemePref, loadThemePreference, setThemePreference } from '../utils/theme';
 
 const OPTIONS: { key: ThemePref; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
   { key: 'light', label: 'Light', icon: 'sunny-outline' },
@@ -10,18 +10,15 @@ const OPTIONS: { key: ThemePref; label: string; icon: React.ComponentProps<typeo
   { key: 'system', label: 'System', icon: 'phone-portrait-outline' },
 ];
 
-/** Appearance card: segmented Light / Dark / System switch. */
+/** Appearance card: segmented Light / Dark / System switch.
+ *  Switching is INSTANT — no reload — via the ThemeContext. */
 export default function ThemeSelector() {
-  const [pref, setPref] = useState<ThemePref>('system');
-
-  useEffect(() => {
-    loadThemePreference().then(setPref);
-  }, []);
+  const styles = useThemedStyles(makeStyles);
+  const { pref, setPref } = useTheme();
 
   const choose = (p: ThemePref) => {
     if (p === pref) return;
-    setPref(p);
-    setThemePreference(p); // saves + reloads the app to repaint every screen
+    setPref(p); // mutates the palette + repaints every screen live
   };
 
   return (
@@ -50,7 +47,7 @@ export default function ThemeSelector() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceContainerLowest,
     marginHorizontal: 20,

@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -40,6 +41,7 @@ function timeAgo(iso: string): string {
 
 /** NOTIFICATION CENTER: full in-app history. Opening it marks everything read. */
 export default function NotificationsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState<AppNotification[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -134,7 +136,7 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   list: { padding: 16, paddingBottom: 40 },
   card: {

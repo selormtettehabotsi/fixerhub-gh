@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -38,6 +39,7 @@ const CATEGORIES = [
 ] as const;
 
 export default function CustomerHome() {
+  const styles = useThemedStyles(makeStyles);
   const { skill: skillParam } = useLocalSearchParams<{ skill?: string }>();
   const { latitude, longitude, loading: locLoading } = useLocation();
   const { onScroll } = useTabBar();
@@ -287,7 +289,7 @@ export default function CustomerHome() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
   greeting: { fontSize: 22, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

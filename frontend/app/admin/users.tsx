@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -20,6 +21,7 @@ const PAGE_SIZE = 30;
 
 /** ADMIN — Users: paged list with search + suspend/unsuspend moderation. */
 export default function AdminUsersScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -173,7 +175,7 @@ export default function AdminUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   searchBox: {
     flexDirection: 'row',

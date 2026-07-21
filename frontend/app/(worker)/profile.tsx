@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -53,6 +54,7 @@ interface WorkerProfile {
 
 
 export default function WorkerProfileScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [name, setName]                     = useState('');
   const [email, setEmail]                   = useState('');
   const [phone, setPhone]                   = useState('');
@@ -811,6 +813,7 @@ function InfoRow({ iconName, label, value, verified, onVerify }: {
   verified?: boolean;
   onVerify?: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.infoRow}>
       <Ionicons name={iconName} size={20} color={Colors.primary} />
@@ -840,6 +843,7 @@ function MenuRow({ iconName, label, onPress }: {
   label: string;
   onPress: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name={iconName} size={20} color={Colors.primary} />
@@ -860,6 +864,7 @@ function DocSlot({ label, sublabel, icon, url, loading, onUpload, onView }: {
   onUpload: () => void;
   onView: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.docSlot}>
       <View style={styles.docSlotInfo}>
@@ -902,6 +907,7 @@ function DocSlot({ label, sublabel, icon, url, loading, onUpload, onView }: {
 // ─── Thumb ───────────────────────────────────────────────────────────────────
 
 function Thumb({ label, uri, onView }: { label: string; uri: string; onView: (u: string) => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.thumb} onPress={() => onView(uri)} activeOpacity={0.8}>
       <Image source={{ uri }} style={styles.thumbImg} />
@@ -912,7 +918,7 @@ function Thumb({ label, uri, onView }: { label: string; uri: string; onView: (u:
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   scrollContent: { paddingBottom: 100 },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },

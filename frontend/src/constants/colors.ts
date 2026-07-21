@@ -74,12 +74,19 @@ const DarkColors: typeof LightColors = {
 };
 
 /**
- * Theme resolution happens RIGHT HERE, synchronously, at module load —
- * expo-router evaluates every screen module at startup, and screens bake
- * Colors into their StyleSheets at import time, so the saved preference must
- * be known before any other module runs. expo-sqlite's kv-store provides the
- * synchronous read. Switching triggers a JS reload (src/utils/theme.ts).
+ * Theme resolution happens RIGHT HERE, synchronously, at module load — the
+ * saved preference is read before any screen builds its first StyleSheet, so
+ * the initial paint is already correct.
+ *
+ * `Colors` is a SINGLE MUTABLE object. Screens read it through
+ * `useThemedStyles` (see context/ThemeContext.tsx); switching the theme calls
+ * `applyPalette` to rewrite these values in place and bumps a version counter,
+ * repainting every screen INSTANTLY — no app reload.
  */
+function resolveDark(pref: string | null): boolean {
+  return pref === 'dark' || (pref !== 'light' && Appearance.getColorScheme() === 'dark');
+}
+
 let savedPref: string | null = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -89,11 +96,14 @@ try {
   // storage unavailable — fall back to the system scheme
 }
 
-const useDark =
-  savedPref === 'dark' ||
-  (savedPref !== 'light' && Appearance.getColorScheme() === 'dark');
+// Mutable shared palette — never reassign this reference, only mutate its keys.
+export const Colors = { ...(resolveDark(savedPref) ? DarkColors : LightColors) };
 
-export const Colors = { ...(useDark ? DarkColors : LightColors) };
+/** Rewrite Colors in place for the chosen preference. Called on every switch. */
+export function applyPalette(pref: 'system' | 'light' | 'dark'): void {
+  const dark = pref === 'dark' || (pref !== 'light' && Appearance.getColorScheme() === 'dark');
+  Object.assign(Colors, dark ? DarkColors : LightColors);
+}
 
 export function isDark(): boolean {
   return Colors.background === DarkColors.background;

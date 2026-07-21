@@ -14,6 +14,7 @@ import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import { getAdminStats, getAdminDailyStats, AdminStats, DailyStats, DailyPoint } from '../../src/api/admin';
 import StatCard from '../../src/components/StatCard';
 
@@ -24,6 +25,7 @@ function BarChart({ points, valueKey, color, formatValue }: {
   color: string;
   formatValue: (v: number) => string;
 }) {
+  const chartStyles = useThemedStyles(makeChartStyles);
   const values = points.map((p) => Number(p[valueKey] ?? 0));
   const max = Math.max(...values, 1);
   const total = values.reduce((a, b) => a + b, 0);
@@ -44,7 +46,7 @@ function BarChart({ points, valueKey, color, formatValue }: {
   );
 }
 
-const chartStyles = StyleSheet.create({
+const makeChartStyles = () => StyleSheet.create({
   total: { fontSize: 12, color: Colors.onSurfaceVariant, fontFamily: 'Inter_500Medium', marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 92 },
   barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
@@ -53,6 +55,7 @@ const chartStyles = StyleSheet.create({
 });
 
 export default function AdminDashboard() {
+  const styles = useThemedStyles(makeStyles);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [daily, setDaily] = useState<DailyStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -216,7 +219,7 @@ export default function AdminDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

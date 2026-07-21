@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -33,6 +34,7 @@ interface MediaItem {
 }
 
 export default function ConfirmBookingScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { workerId, workerName, skill, workerPicture, prefillServiceType, prefillNotes, prefillPhone } = useLocalSearchParams<{
     workerId: string;
     workerName: string;
@@ -195,7 +197,9 @@ export default function ConfirmBookingScreen() {
         workerId: Number(workerId),
         workerName: workerName || undefined,
         serviceType,
-        amount: min,
+        // AGREED PRICE: don't pre-fill the payable amount with the customer's
+        // minimum. min/max are only the budget range shown to the worker; the
+        // final charged amount is what the worker confirms at completion.
         minAmount: min,
         maxAmount: max,
         notes: notes.trim() || undefined,
@@ -503,7 +507,7 @@ export default function ConfirmBookingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   flex: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 8 },

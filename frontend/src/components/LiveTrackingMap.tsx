@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,6 +84,7 @@ interface RouteInfo {
  * from Google's driving-time estimate when available.
  */
 export default function LiveTrackingMap({ bookingId, workerName, customerLat, customerLng }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [worker, setWorker] = useState<WorkerPosition | null>(null);
   const [connected, setConnected] = useState(false);
   const [route, setRoute] = useState<RouteInfo | null>(null);
@@ -253,7 +255,7 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     borderRadius: 14,
     overflow: 'hidden',

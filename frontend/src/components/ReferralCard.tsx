@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
@@ -9,6 +10,7 @@ import { getMyReferral, ReferralInfo } from '../api/auth';
  * invitees have completed their first paid booking.
  */
 export default function ReferralCard() {
+  const styles = useThemedStyles(makeStyles);
   const [info, setInfo] = useState<ReferralInfo | null>(null);
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function ReferralCard() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceContainerLowest,
     marginHorizontal: 20,

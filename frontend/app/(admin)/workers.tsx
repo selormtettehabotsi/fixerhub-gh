@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ import { useTabBar } from '../../src/context/TabBarContext';
 import Avatar from '../../src/components/Avatar';
 
 export default function AdminWorkersScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { onScroll } = useTabBar();
   const [workers, setWorkers] = useState<AdminWorker[]>([]);
   const [loading, setLoading] = useState(false);
@@ -187,7 +189,7 @@ export default function AdminWorkersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

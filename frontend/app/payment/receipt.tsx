@@ -1,4 +1,5 @@
 import React from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -19,6 +20,7 @@ function ghs(value: string | undefined): string {
 }
 
 export default function PaymentReceiptScreen() {
+  const styles = useThemedStyles(makeStyles);
   const {
     bookingId,
     serviceType,
@@ -109,6 +111,7 @@ export default function PaymentReceiptScreen() {
 }
 
 function Row({ label, value, small }: { label: string; value: string; small?: boolean }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -117,7 +120,7 @@ function Row({ label, value, small }: { label: string; value: string; small?: bo
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
 
   topBar: {

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import {
   View,
   Text,
@@ -37,6 +38,7 @@ export default function RatingPromptModal({
   onClose,
   onSubmit,
 }: RatingPromptModalProps) {
+  const styles = useThemedStyles(makeStyles);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
@@ -129,7 +131,7 @@ export default function RatingPromptModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

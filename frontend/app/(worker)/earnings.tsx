@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -17,6 +18,7 @@ import { getWorkerByUserId } from '../../src/api/workers';
 import { useTabBar } from '../../src/context/TabBarContext';
 
 export default function EarningsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { onScroll } = useTabBar();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [summary, setSummary] = useState<WorkerPaymentSummary | null>(null);
@@ -137,7 +139,7 @@ export default function EarningsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

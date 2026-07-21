@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -33,6 +34,7 @@ interface Props {
 }
 
 export default function EditProfileModal({ visible, onClose, workerUserId, initialSkill, onSaved }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -143,6 +145,7 @@ function Field({ icon, label, value, onChange, placeholder, keyboardType, autoCa
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words';
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -162,7 +165,7 @@ function Field({ icon, label, value, onChange, placeholder, keyboardType, autoCa
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   bg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   dismiss: { flex: 1 },
   card: {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,6 +18,7 @@ import ChangePasswordModal from '../../src/components/ChangePasswordModal';
 import ReferralCard from '../../src/components/ReferralCard';
 
 export default function CustomerProfile() {
+  const styles = useThemedStyles(makeStyles);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -255,6 +257,7 @@ export default function CustomerProfile() {
 }
 
 function MenuRow({ iconName, label, onPress }: { iconName: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name={iconName} size={20} color={Colors.primary} />
@@ -272,6 +275,7 @@ function InfoRow({ iconName, label, value, verified, onVerify }: {
   verified?: boolean;
   onVerify?: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.infoRow}>
       <Ionicons name={iconName} size={20} color={Colors.primary} />
@@ -294,7 +298,7 @@ function InfoRow({ iconName, label, value, verified, onVerify }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   scrollContent: { paddingBottom: 100 },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },

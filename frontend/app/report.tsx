@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThemedStyles } from '../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -33,6 +34,7 @@ const CATEGORIES: Category[] = [
 const MIN_DESCRIPTION = 20;
 
 export default function ReportScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [category, setCategory] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -151,7 +153,7 @@ export default function ReportScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
 
   topBar: {

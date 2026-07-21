@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
   Text,
@@ -59,6 +60,7 @@ function formatDate(iso: string): string {
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function AdminReportsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const { onScroll } = useTabBar();
   const [reports, setReports]     = useState<Report[]>([]);
   const [loading, setLoading]     = useState(false);
@@ -366,7 +368,7 @@ export default function AdminReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },

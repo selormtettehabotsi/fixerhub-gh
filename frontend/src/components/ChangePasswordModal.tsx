@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useThemedStyles } from '../context/ThemeContext';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function ChangePasswordModal({ visible, onClose }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -98,6 +100,7 @@ function PasswordField({ label, value, onChange, autoFocus }: {
   onChange: (v: string) => void;
   autoFocus?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const [show, setShow] = useState(false);
   return (
     <View style={styles.fieldWrap}>
@@ -122,7 +125,7 @@ function PasswordField({ label, value, onChange, autoFocus }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   bg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   dismiss: { flex: 1 },
   card: {

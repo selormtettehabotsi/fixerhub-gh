@@ -73,9 +73,17 @@ public class BookingController {
 
     @PutMapping("/{id}/status")
     public ResponseEntity<BookingResponse> updateStatus(@PathVariable Long id,
-                                                        @RequestBody Map<String, String> body) {
+                                                        @RequestBody Map<String, Object> body) {
         accessGuard.assertWorkerOwns(id);
-        return ResponseEntity.ok(bookingService.updateStatus(id, body.get("status")));
+        String status = body.get("status") != null ? String.valueOf(body.get("status")) : null;
+        // AGREED PRICE: when completing, the worker confirms the final amount that
+        // was agreed with the customer — that exact figure is what Paystack charges.
+        java.math.BigDecimal finalAmount = null;
+        Object fa = body.get("finalAmount");
+        if (fa != null && !String.valueOf(fa).isBlank()) {
+            finalAmount = new java.math.BigDecimal(String.valueOf(fa));
+        }
+        return ResponseEntity.ok(bookingService.updateStatus(id, status, finalAmount));
     }
 
     @DeleteMapping("/{id}")
