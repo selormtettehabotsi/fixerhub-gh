@@ -12,7 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,8 @@ import { login } from '../../src/api/auth';
 
 export default function LoginScreen() {
   const styles = useThemedStyles(makeStyles);
+  // Set by the forgot-password flow after a successful reset.
+  const { reset } = useLocalSearchParams<{ reset?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -90,6 +92,14 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>Sign in to your account</Text>
           </View>
 
+          {/* Confirmation after a successful password reset */}
+          {reset === '1' && !error && (
+            <View style={styles.successBox}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={Colors.available} style={styles.errorIcon} />
+              <Text style={styles.successText}>Password reset. Sign in with your new password.</Text>
+            </View>
+          )}
+
           {error && (
             <View style={styles.errorBox}>
               <Ionicons name="alert-circle-outline" size={16} color={Colors.error} style={styles.errorIcon} />
@@ -151,6 +161,14 @@ export default function LoginScreen() {
                 )}
               </LinearGradient>
             </TouchableOpacity>
+
+            {/* PASSWORD RESET: OTP-based recovery for a forgotten password */}
+            <TouchableOpacity
+              onPress={() => router.push('/(auth)/forgot-password')}
+              style={styles.forgotLink}
+            >
+              <Text style={styles.forgotLinkText}>Forgot password?</Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity onPress={() => router.replace('/(auth)/register')} style={styles.registerLink}>
@@ -193,6 +211,13 @@ const makeStyles = () => StyleSheet.create({
   btnWrapper: { marginTop: 8 },
   primaryButton: { borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   primaryButtonText: { color: Colors.onPrimary, fontSize: 16, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
+  successBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16,
+    backgroundColor: 'rgba(46,125,50,0.10)', borderRadius: 8, padding: 12,
+  },
+  successText: { color: Colors.available, fontSize: 15, fontFamily: 'Inter_400Regular', flex: 1 },
+  forgotLink: { alignItems: 'center', paddingVertical: 6 },
+  forgotLinkText: { fontSize: 15, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
   registerLink: { alignItems: 'center', marginTop: 28, padding: 8 },
   registerLinkText: { fontSize: 16, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
   registerLinkBold: { color: Colors.primary, fontWeight: '700' },

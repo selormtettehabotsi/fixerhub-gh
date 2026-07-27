@@ -12,6 +12,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** ADMIN STATS: users who signed up with someone's referral code. */
     long countByReferredByIsNotNull();
 
+    /** REFERRALS: how many people signed up using THIS user's code. */
+    long countByReferredBy(Long referrerId);
+
     /** ADMIN STATS: referrals that converted (invitee made a first payment). */
     @org.springframework.data.jpa.repository.Query(
             "SELECT COALESCE(SUM(u.referralCount), 0) FROM User u")

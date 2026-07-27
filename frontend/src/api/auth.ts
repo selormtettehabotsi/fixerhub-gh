@@ -42,6 +42,33 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   return res.data;
 }
 
+// ── PASSWORD RESET (forgot password) ───────────────────────────────────────
+// Both endpoints are public — the OTP sent to the registered phone (with an
+// email fallback) is what proves ownership of the account.
+
+/** Step 1: send a 6-digit reset OTP to the phone on the account.
+ *  Returns the backend's message, which says where the code was sent. */
+export async function requestPasswordReset(phone: string): Promise<{ message: string }> {
+  const res = await client.post<{ message: string }>('/auth/forgot-password', { phone: phone.trim() });
+  return res.data;
+}
+
+/** Step 2: confirm the OTP and set a new password.
+ *  Backend rules: min 8 characters AND at least one number; 5 wrong OTP
+ *  attempts invalidate the code; a successful reset revokes all sessions. */
+export async function resetPassword(
+  phone: string,
+  otp: string,
+  newPassword: string
+): Promise<{ message: string }> {
+  const res = await client.post<{ message: string }>('/auth/reset-password', {
+    phone: phone.trim(),
+    otp: otp.trim(),
+    newPassword,
+  });
+  return res.data;
+}
+
 export interface PublicUserInfo {
   id: number;
   name: string;
@@ -98,10 +125,13 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
 export interface ReferralInfo {
   code: string;
+  /** People who SIGNED UP with this code — immediate proof the code works. */
+  signups: number;
+  /** Of those, how many completed a first paid booking (the credited ones). */
   count: number;
 }
 
-/** Own referral code + number of invitees who completed their first paid booking. */
+/** Own referral code + signup and conversion counts. */
 export async function getMyReferral(): Promise<ReferralInfo> {
   const res = await client.get<ReferralInfo>('/auth/referrals/me');
   return res.data;

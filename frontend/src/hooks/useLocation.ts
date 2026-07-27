@@ -47,7 +47,24 @@ export function useLocation() {
         return;
       }
 
-      // Fast first fix
+      // SPEED: paint INSTANTLY from the OS's cached position (returns in
+      // milliseconds) — a fresh GPS fix can take 5–30s on Android, which is
+      // why "locating" used to feel stuck. The fresh fix below then refines it.
+      try {
+        const last = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 });
+        if (last && !cancelled) {
+          clearTimeout(fallbackTimer);
+          setState({
+            latitude: last.coords.latitude,
+            longitude: last.coords.longitude,
+            loading: false,
+            error: null,
+            isFallback: false,
+          });
+        }
+      } catch { /* no cached fix — fall through to the fresh one */ }
+
+      // Fresh fix (refines the cached position; first paint if no cache)
       try {
         const location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
@@ -64,7 +81,13 @@ export function useLocation() {
         }
       } catch (err: any) {
         clearTimeout(fallbackTimer);
-        if (!cancelled) setState({ ...FALLBACK, loading: false, error: err.message, isFallback: true });
+        // Keep the cached position if we already painted one
+        if (!cancelled) {
+          setState((prev) =>
+            prev.latitude != null && !prev.isFallback
+              ? prev
+              : { ...FALLBACK, loading: false, error: err.message, isFallback: true });
+        }
       }
 
       // Then keep it live: update whenever the user moves ~50 m.

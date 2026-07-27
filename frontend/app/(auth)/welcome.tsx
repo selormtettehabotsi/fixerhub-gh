@@ -7,6 +7,8 @@ import {
   FlatList,
   Dimensions,
   TouchableOpacity,
+  Image,
+  ImageSourcePropType,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
@@ -16,24 +18,43 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
 
-const { width } = Dimensions.get('window');
+const { width, height: screenHeight } = Dimensions.get('window');
 
-const slides: { id: string; iconName: React.ComponentProps<typeof Ionicons>['name']; title: string; subtitle: string }[] = [
+// Hero artwork is transparent PNG, so it can run big and unframed. Bounded by
+// screen HEIGHT as well as width so the title/subtitle never get pushed off
+// short devices.
+const HERO_W = width * 0.84;
+const HERO_H = Math.min(width * 1.0, screenHeight * 0.42);
+
+/** A slide shows EITHER a full illustration (`image`) or a framed icon. */
+type Slide = {
+  id: string;
+  iconName: React.ComponentProps<typeof Ionicons>['name'];
+  image?: ImageSourcePropType;
+  title: string;
+  subtitle: string;
+};
+
+const slides: Slide[] = [
   {
     id: '1',
     iconName: 'construct-outline',
+    // Hero illustration — the first thing a new user sees.
+    image: require('../../assets/onboarding-worker.png'),
     title: 'Find Trusted Workers Near You',
     subtitle: 'Plumbers, electricians, and more — verified and ready.',
   },
   {
     id: '2',
     iconName: 'calendar-outline',
+    image: require('../../assets/onboarding-booking.png'),
     title: 'Book in Minutes',
     subtitle: 'Choose a worker, confirm your booking, and relax.',
   },
   {
     id: '3',
     iconName: 'card-outline',
+    image: require('../../assets/onboarding-payment.png'),
     title: 'Safe & Secure Payments',
     subtitle: 'Pay securely via Paystack after the job is done.',
   },
@@ -70,9 +91,15 @@ export default function WelcomeScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.slide}>
-            <View style={styles.iconCircle}>
-              <Ionicons name={item.iconName} size={56} color={Colors.primary} />
-            </View>
+            {item.image ? (
+              // Illustrated slide: the artwork carries the message, so it runs
+              // full-bleed instead of sitting inside the small icon circle.
+              <Image source={item.image} style={styles.heroImage} resizeMode="contain" />
+            ) : (
+              <View style={styles.iconCircle}>
+                <Ionicons name={item.iconName} size={56} color={Colors.primary} />
+              </View>
+            )}
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
           </View>
@@ -128,7 +155,9 @@ const makeStyles = () => StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 40,
+    // 28 (not 40) so the enlarged hero at 84% of the screen width still fits
+    // inside the padded slide instead of bleeding onto the neighbouring page.
+    paddingHorizontal: 28,
   },
   iconCircle: {
     width: 120,
@@ -138,6 +167,14 @@ const makeStyles = () => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 36,
+  },
+  // HERO ILLUSTRATION. The PNGs have transparent backgrounds, so no framing
+  // circle is needed — the artwork sits directly on the surface and reads
+  // correctly in BOTH light and dark themes.
+  heroImage: {
+    width: HERO_W,
+    height: HERO_H,
+    marginBottom: 28,
   },
   slideTitle: {
     fontSize: 28,

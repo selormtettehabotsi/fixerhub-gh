@@ -41,6 +41,12 @@ export default function RegisterScreen() {
       setError('Please fill in all required fields.');
       return;
     }
+    // Same rule the backend enforces — checking here means the user is told
+    // before the request instead of getting a 400 back.
+    if (password.length < 8 || !/\d/.test(password)) {
+      setError('Password must be at least 8 characters and include a number.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

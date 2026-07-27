@@ -56,6 +56,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Object[]> earningsByWorkerSince(@Param("since") java.time.LocalDateTime since,
                                          @Param("status") PaymentStatus status);
 
+    /**
+     * REMINDERS: payments still awaiting the customer (job done, money not in)
+     * that were created in the given window — used to nudge them once a day
+     * instead of letting the worker wait indefinitely.
+     */
+    List<Payment> findByStatusAndCreatedAtBetween(PaymentStatus status,
+                                                  java.time.LocalDateTime from,
+                                                  java.time.LocalDateTime to);
+
     /** ADMIN CHARTS: settled revenue per calendar day since the given moment. */
     @Query(value = "SELECT CAST(created_at AS date) AS day, COALESCE(SUM(amount), 0) AS total " +
                    "FROM payments WHERE status = 'SUCCESS' AND created_at >= :since " +

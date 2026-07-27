@@ -47,7 +47,11 @@ public class BookingService {
                 .scheduledAt(request.getScheduledAt())   // SCHEDULING: customer-chosen date/time
                 .status(Booking.Status.PENDING)
                 .build();
-        return toResponse(bookingRepository.save(booking));
+        Booking saved = bookingRepository.save(booking);
+        // WORKER NOTIFICATIONS: tell the worker a job just came in.
+        bookingEventPublisher.publishBookingCreated(
+                saved.getId(), saved.getCustomerId(), saved.getWorkerId(), saved.getServiceType());
+        return toResponse(saved);
     }
 
     public BookingResponse getBookingById(Long id) {
@@ -156,8 +160,16 @@ public class BookingService {
         booking.setStatus(newStatus);
         Booking saved = bookingRepository.save(booking);
 
-        // Publish status update for all status changes
-        bookingEventPublisher.publishStatusUpdate(saved.getId(), saved.getStatus().name(), saved.getWorkerId());
+        // Publish status update for all status changes. A CANCELLED coming
+        // through this (worker-authorised) path is the worker DECLINING the job,
+        // so the customer is the one who must be told.
+        if (saved.getStatus() == Booking.Status.CANCELLED) {
+            bookingEventPublisher.publishStatusUpdate(
+                    saved.getId(), saved.getStatus().name(), saved.getWorkerId(), "WORKER");
+        } else {
+            bookingEventPublisher.publishStatusUpdate(
+                    saved.getId(), saved.getStatus().name(), saved.getWorkerId());
+        }
 
         if (saved.getStatus() == Booking.Status.COMPLETED) {
             bookingEventPublisher.publishBookingCompleted(
@@ -187,7 +199,11 @@ public class BookingService {
                 .workerId(done.getWorkerId())
                 .workerName(done.getWorkerName())
                 .serviceType(done.getServiceType())
-                .amount(done.getAmount())
+                // AGREED PRICE: deliberately NOT copying `amount`. It holds the
+                // price confirmed for the PREVIOUS visit; carrying it over would
+                // pre-price the next job without the customer agreeing (and would
+                // let it be completed without confirming a new figure). The next
+                // visit starts with the budget range only, like a fresh booking.
                 .minAmount(done.getMinAmount())
                 .maxAmount(done.getMaxAmount())
                 .notes(done.getNotes())
@@ -223,7 +239,12 @@ public class BookingService {
         Booking booking = findOrThrow(id);
         assertTransition(booking.getStatus(), Booking.Status.CANCELLED);   // N7
         booking.setStatus(Booking.Status.CANCELLED);
-        return toResponse(bookingRepository.save(booking));
+        Booking saved = bookingRepository.save(booking);
+        // This route is customer-authorised, so the WORKER is the one who needs
+        // to know their scheduled job just went away.
+        bookingEventPublisher.publishStatusUpdate(
+                saved.getId(), saved.getStatus().name(), saved.getWorkerId(), "CUSTOMER");
+        return toResponse(saved);
     }
 
     public BookingResponse submitQuote(Long id, BigDecimal quotedAmount) {

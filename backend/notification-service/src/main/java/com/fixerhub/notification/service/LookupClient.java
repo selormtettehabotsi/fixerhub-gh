@@ -37,6 +37,33 @@ public class LookupClient {
         }
     }
 
+    /**
+     * WORKER NOTIFICATIONS: maps a worker PROFILE id to the userId that owns it,
+     * so pushes can reach the worker's account. The mapping never changes, so it
+     * is cached in memory. Returns null if unresolvable (push is then skipped).
+     */
+    @SuppressWarnings("unchecked")
+    public Long userIdForWorker(Long workerId) {
+        if (workerId == null) return null;
+        Long cached = workerUserIdCache.get(workerId);
+        if (cached != null) return cached;
+        try {
+            Map<String, Object> worker = restTemplate.getForObject(
+                    "http://worker-service/workers/internal/" + workerId, Map.class);
+            Object userId = worker != null ? worker.get("userId") : null;
+            if (userId == null) return null;
+            Long resolved = Long.valueOf(String.valueOf(userId));
+            workerUserIdCache.put(workerId, resolved);
+            return resolved;
+        } catch (Exception e) {
+            log.warn("Could not resolve worker {} to a userId: {}", workerId, e.getMessage());
+            return null;
+        }
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<Long, Long> workerUserIdCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     /** The customer userId on a booking, or null. */
     @SuppressWarnings("unchecked")
     public Long customerIdForBooking(Long bookingId) {

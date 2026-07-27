@@ -46,6 +46,9 @@ export interface Booking {
   pricingStyle?: string;
   recurrence?: string;
   scheduledAt?: string;
+  /** Client-side: stable display number (#1 = the user's first ever booking),
+   *  computed on load so lists can show newest-first without renumbering. */
+  bookingNumber?: number;
 }
 
 /** MILESTONES: completed-jobs count for the worker profile badge. */

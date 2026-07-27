@@ -97,7 +97,9 @@ public class AuthController {
      *  Used by worker/customer views to show each other's profile pictures. */
     @GetMapping("/users/{id}/public")
     public ResponseEntity<UserResponse> getUserPublic(@PathVariable Long id) {
-        return ResponseEntity.ok(authService.getUserById(id));
+        // PRIVACY: this route is unauthenticated — return only the public
+        // projection (name/picture/role), never email or suspension state.
+        return ResponseEntity.ok(authService.getPublicUserById(id));
     }
 
     // ------------------------------------------------------------------ //

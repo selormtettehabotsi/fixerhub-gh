@@ -128,7 +128,8 @@ export default function WorkerDashboard() {
         AsyncStorage.getItem(HIDDEN_KEY),
       ]);
       const hidden: number[] = hiddenRaw ? JSON.parse(hiddenRaw) : [];
-      setBookings(bookingData.filter((b) => !hidden.includes(b.id)));
+      // NEWEST FIRST: fresh job offers sit at the top of the dashboard
+      setBookings(bookingData.filter((b) => !hidden.includes(b.id)).sort((a, b) => b.id - a.id));
     } catch (err: any) {
       setError(err.message ?? 'Failed to load data');
     } finally {

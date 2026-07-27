@@ -14,7 +14,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect, Stack, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,8 @@ interface PeerInfo {
 
 export default function ChatScreen() {
   const styles = useThemedStyles(makeStyles);
+  // Custom header draws under the status bar, so pad by the top inset.
+  const insets = useSafeAreaInsets();
   // The route param is named bookingId for URL compat, but now holds the conversationId
   // e.g. "/chat/c1_w2" → bookingId = "c1_w2"
   const { bookingId: roomId, otherName: otherNameParam } = useLocalSearchParams<{ bookingId: string; otherName?: string }>();
@@ -107,7 +109,15 @@ export default function ChatScreen() {
         if (p.profilePicture) setOtherPicture(p.profilePicture);
         if (p.phone) setPeerPhone(p.phone);
       })
-      .catch(async () => {
+      .catch(async (err) => {
+        // The /peer endpoint carries the phone number that powers the call
+        // button. If it fails (e.g. booking-service not yet rebuilt with this
+        // endpoint) we can still show name + picture, but there will be NO
+        // phone — hence no call button. Log it so that's diagnosable.
+        console.warn(
+          '[chat] peer lookup failed — call button hidden (no phone). Rebuild booking-service/auth-service if this persists:',
+          err?.message ?? err
+        );
         // Fallback: resolve the customer's public info from the conversation id
         const id = userIdRef.current || (await AsyncStorage.getItem('userId')) || '';
         const match = roomId.match(/^c(\d+)_w(\d+)$/);
@@ -407,46 +417,50 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* CHAT HEADER: avatar + name on the left, call button on the right */}
-      <Stack.Screen
-        options={{
-          headerBackTitle: '',
-          headerLeft: () => (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TouchableOpacity onPress={() => router.back()} style={{ paddingRight: 6, paddingVertical: 4 }}>
-                <Ionicons name="chevron-back" size={26} color="#ffffff" />
-              </TouchableOpacity>
-              {otherPicture ? (
-                <Image
-                  source={{ uri: cloudinaryThumb(otherPicture, 34) }}
-                  style={{ width: 34, height: 34, borderRadius: 17, marginRight: 8 }}
-                />
-              ) : (
-                <View style={styles.headerAvatarFallback}>
-                  <Text style={styles.headerAvatarText}>
-                    {(chatTitle || '?').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ),
-          headerTitle: () => (
-            <Text style={styles.headerName} numberOfLines={1}>{chatTitle}</Text>
-          ),
-          headerRight: peerPhone
-            ? () => (
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(`tel:${peerPhone}`)}
-                  style={{ paddingHorizontal: 10, paddingVertical: 4 }}
-                >
-                  <Ionicons name="call" size={22} color="#ffffff" />
-                </TouchableOpacity>
-              )
-            : undefined,
-        }}
-      />
+      {/* CHAT HEADER — rendered by us, not by the navigator.
+          The native-stack header lays its title out natively and ignores flex
+          hints, so a long name kept growing the title block and pushing the
+          call button off the screen. A custom row gives real flex control:
+          back + avatar + call are FIXED width, and the name takes whatever is
+          left (flexShrink) and ellipsizes with "…" when it doesn't fit. */}
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBackBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={26} color="#ffffff" />
+        </TouchableOpacity>
+
+        {otherPicture ? (
+          <Image source={{ uri: cloudinaryThumb(otherPicture, 34) }} style={styles.headerAvatarImg} />
+        ) : (
+          <View style={styles.headerAvatarFallback}>
+            <Text style={styles.headerAvatarText}>
+              {(chatTitle || '?').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+            </Text>
+          </View>
+        )}
+
+        <Text style={styles.headerName} numberOfLines={1} ellipsizeMode="tail">
+          {chatTitle}
+        </Text>
+
+        {peerPhone ? (
+          <TouchableOpacity
+            onPress={() => Linking.openURL(`tel:${peerPhone}`)}
+            style={styles.headerCallBtn}
+            hitSlop={8}
+          >
+            <Ionicons name="call" size={22} color="#ffffff" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {/* KEYBOARD FIX (Android): the Android window already resizes when the
+          keyboard opens (softwareKeyboardLayoutMode "resize"), so adding
+          KeyboardAvoidingView's own 'height' compensation on top of it
+          double-shifted the layout and made the input sink off-screen when
+          tapped. Passing `undefined` on Android lets the OS handle it; iOS
+          still needs explicit padding. */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
@@ -544,12 +558,33 @@ const makeStyles = () => StyleSheet.create({
   emptyText: { fontSize: 18, fontWeight: '600', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_600SemiBold' },
   emptySubtext: { fontSize: 15, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
 
-  headerName: { color: '#ffffff', fontSize: 18, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
+  // HEADER: back / avatar / call are fixed; the NAME is the only flexible item
+  // (flex:1 + flexShrink) so it truncates with "…" and never displaces the
+  // call button, however long it is.
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingBottom: 10,
+    paddingHorizontal: 8,
+  },
+  headerBackBtn: { paddingHorizontal: 4, paddingVertical: 4 },
+  headerName: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: 'PlusJakartaSans_700Bold',
+  },
+  headerAvatarImg: { width: 34, height: 34, borderRadius: 17, marginRight: 8 },
   headerAvatarFallback: {
     width: 34, height: 34, borderRadius: 17, marginRight: 8,
     backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center',
   },
   headerAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  headerCallBtn: { paddingHorizontal: 8, paddingVertical: 6 },
 
   msgRow: { marginBottom: 12 },
   msgRowLeft: { alignItems: 'flex-start' },

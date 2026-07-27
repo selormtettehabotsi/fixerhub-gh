@@ -79,8 +79,13 @@ export default function BookingsScreen() {
         AsyncStorage.getItem(HIDDEN_KEY),
       ]);
       const hidden: number[] = hiddenRaw ? JSON.parse(hiddenRaw) : [];
-      // Sort ascending by ID so booking numbers are stable (#1 = first ever booking)
-      setBookings([...data].filter((b) => !hidden.includes(b.id)).sort((a, b) => a.id - b.id));
+      // Assign stable booking numbers from the ASCENDING order (#1 = first ever
+      // booking), then display NEWEST FIRST so fresh bookings sit at the top.
+      const numbered = [...data]
+        .filter((b) => !hidden.includes(b.id))
+        .sort((a, b) => a.id - b.id)
+        .map((b, i) => ({ ...b, bookingNumber: i + 1 }));
+      setBookings(numbered.reverse());
     } catch (err: any) {
       const raw = err?.message ?? err;
       setError(typeof raw === 'string' ? raw : JSON.stringify(raw));
@@ -214,7 +219,7 @@ export default function BookingsScreen() {
             <View style={styles.bookingHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.serviceType}>{item.serviceType}</Text>
-                <Text style={styles.bookingNumLabel}>Booking #{index + 1}</Text>
+                <Text style={styles.bookingNumLabel}>Booking #{item.bookingNumber ?? index + 1}</Text>
               </View>
               <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] ?? Colors.outline }]}>
                 <Text style={styles.statusText}>{item.status}</Text>
@@ -284,7 +289,7 @@ export default function BookingsScreen() {
             {/* View Details — full-width primary CTA */}
             <TouchableOpacity
               style={styles.viewDetailsBtn}
-              onPress={() => router.push({ pathname: `/booking/${item.id}`, params: { bookingNumber: String(index + 1) } })}
+              onPress={() => router.push({ pathname: `/booking/${item.id}`, params: { bookingNumber: String(item.bookingNumber ?? index + 1) } })}
               activeOpacity={0.85}
             >
               <Ionicons name="eye-outline" size={17} color="#fff" />

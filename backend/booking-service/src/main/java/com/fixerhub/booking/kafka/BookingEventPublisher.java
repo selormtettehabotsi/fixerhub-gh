@@ -36,6 +36,35 @@ public class BookingEventPublisher {
         send(event, "booking-completed");
     }
 
+    /**
+     * WORKER NOTIFICATIONS: a brand-new booking. Previously nothing was
+     * published on creation, so the worker only discovered new jobs by opening
+     * the app. Carries the worker profile id so the consumer can resolve the
+     * worker's user account and push to them.
+     */
+    public void publishBookingCreated(Long bookingId, Long customerId, Long workerId,
+                                      String serviceType) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", "BOOKING_CREATED");
+        event.put("bookingId", bookingId);
+        event.put("customerId", customerId);
+        event.put("workerId", workerId);
+        event.put("serviceType", serviceType);
+        send(event, "booking-created");
+    }
+
+    /** Status change. `cancelledBy` ("CUSTOMER"/"WORKER") lets the consumer
+     *  notify the OTHER party when a job is cancelled or declined. */
+    public void publishStatusUpdate(Long bookingId, String status, Long workerId, String cancelledBy) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", "STATUS_UPDATE");
+        event.put("bookingId", bookingId);
+        event.put("status", status);
+        event.put("workerId", workerId);
+        if (cancelledBy != null) event.put("cancelledBy", cancelledBy);
+        send(event, "status-update");
+    }
+
     public void publishStatusUpdate(Long bookingId, String status, Long workerId) {
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "STATUS_UPDATE");

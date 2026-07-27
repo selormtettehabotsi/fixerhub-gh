@@ -25,6 +25,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -101,6 +102,12 @@ public class AuthService {
         // Auto-create worker profile if role is WORKER
         if (request.getRole() == User.Role.WORKER) {
             createWorkerProfile(user, request);
+        }
+
+        // REFERRALS: tell the inviter their code was just used. Best effort —
+        // a notification failure must never break registration.
+        if (referredBy != null) {
+            notifyReferrerOfSignup(referredBy, user.getName());
         }
 
         return buildAuthResponse(user);
@@ -266,9 +273,36 @@ public class AuthService {
             user.setReferralCode(generateReferralCode());
             userRepository.save(user);
         }
+        // `signups`  — people who registered with this code (immediate feedback)
+        // `count`    — of those, how many completed a first paid booking
+        // Showing signups matters: previously a referrer saw nothing at all
+        // until an invitee paid, so the code felt broken.
         return Map.of(
                 "code", user.getReferralCode(),
+                "signups", userRepository.countByReferredBy(user.getId()),
                 "count", user.getReferralCount() == null ? 0 : user.getReferralCount());
+    }
+
+    /**
+     * REFERRALS: someone signed up with this user's code — tell them straight
+     * away (push + in-app notification centre) so the invite feels alive rather
+     * than silent until the invitee eventually pays.
+     */
+    private void notifyReferrerOfSignup(Long referrerId, String newUserName) {
+        try {
+            String who = (newUserName == null || newUserName.isBlank())
+                    ? "Someone" : newUserName.trim().split("\\s+")[0];
+            String message = who + " joined FixerHub with your invite code! "
+                    + "You'll be credited once they complete their first booking.";
+            Map<String, String> body = new HashMap<>();
+            body.put("userId", String.valueOf(referrerId));
+            body.put("title", "Your invite was used 🎉");
+            body.put("body", message);
+            restTemplate.postForEntity(
+                    "http://notification-service/notifications/push", body, Void.class);
+        } catch (Exception e) {
+            log.warn("Could not notify referrer {} of a signup: {}", referrerId, e.getMessage());
+        }
     }
 
     /**
@@ -288,6 +322,21 @@ public class AuthService {
                 userRepository.save(referrer);
                 log.info("Referral credited: user {} (referred by {}) made first payment — referrer count now {}",
                         payerUserId, referrer.getId(), count + 1);
+
+                // Second moment worth celebrating: the referral actually converted.
+                try {
+                    String name = payer.getName() == null || payer.getName().isBlank()
+                            ? "Your invitee" : payer.getName().trim().split("\\s+")[0];
+                    Map<String, String> body = new HashMap<>();
+                    body.put("userId", String.valueOf(referrer.getId()));
+                    body.put("title", "Referral confirmed ✅");
+                    body.put("body", name + " completed their first booking — that's "
+                            + (count + 1) + " confirmed referral" + (count + 1 == 1 ? "" : "s") + "!");
+                    restTemplate.postForEntity(
+                            "http://notification-service/notifications/push", body, Void.class);
+                } catch (Exception e) {
+                    log.warn("Could not notify referrer {} of a conversion: {}", referrer.getId(), e.getMessage());
+                }
             });
         });
     }
@@ -391,8 +440,12 @@ public class AuthService {
         if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new UnauthorizedException("Current password is incorrect");
         }
-        if (newPassword == null || newPassword.length() < 6) {
-            throw new BadRequestException("New password must be at least 6 characters");
+        // Same rule as registration and password reset. It used to be a laxer
+        // 6-characters-no-digit check, which meant a user could downgrade to a
+        // weaker password than they were forced to pick when signing up.
+        if (newPassword == null || newPassword.length() < 8 || !newPassword.matches(".*\\d.*")) {
+            throw new BadRequestException(
+                    "Password must be at least 8 characters and contain at least one number");
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
@@ -670,6 +723,24 @@ public class AuthService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("User not found"));
         return toUserResponse(user);
+    }
+
+    /**
+     * PRIVACY: projection for the UNAUTHENTICATED /auth/users/{id}/public
+     * endpoint. It previously returned the full record — meaning anyone could
+     * walk the id range and harvest every user's EMAIL (and see who was
+     * suspended). Only the fields the app actually renders (name, picture,
+     * role) are exposed here; email, suspension and created-at stay private.
+     */
+    public UserResponse getPublicUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        return UserResponse.builder()
+                .id(user.getId())
+                .name(user.getName())
+                .profilePicture(user.getProfilePicture())
+                .role(user.getRole().name())
+                .build();
     }
 
     private UserResponse toUserResponse(User user) {

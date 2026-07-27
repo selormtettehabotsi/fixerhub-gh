@@ -19,6 +19,10 @@ export default function ReferralCard() {
 
   if (!info) return null;
 
+  // Older backends didn't return `signups`; fall back to the credited count so
+  // the card still renders sensibly against a not-yet-rebuilt auth-service.
+  const signups = info.signups ?? info.count ?? 0;
+
   const share = () =>
     Share.share({
       message:
@@ -31,9 +35,6 @@ export default function ReferralCard() {
       <View style={styles.headerRow}>
         <Ionicons name="gift-outline" size={20} color={Colors.primary} />
         <Text style={styles.title}>Invite friends</Text>
-        {info.count > 0 && (
-          <Text style={styles.count}>{info.count} joined & booked</Text>
-        )}
       </View>
       <View style={styles.row}>
         <View style={styles.codeBox}>
@@ -44,6 +45,32 @@ export default function ReferralCard() {
           <Text style={styles.shareText}>Share</Text>
         </TouchableOpacity>
       </View>
+
+      {/* PROOF THE CODE IS WORKING. Previously nothing showed until an invitee
+          actually paid, so a user who had shared their code successfully saw an
+          empty card and assumed it was broken. Signups appear immediately. */}
+      {signups > 0 ? (
+        <View style={styles.statsRow}>
+          <View style={styles.stat}>
+            <Ionicons name="person-add-outline" size={15} color={Colors.primary} />
+            <Text style={styles.statText}>
+              <Text style={styles.statNum}>{signups}</Text>
+              {signups === 1 ? ' friend joined' : ' friends joined'}
+            </Text>
+          </View>
+          <View style={styles.stat}>
+            <Ionicons name="checkmark-circle-outline" size={15} color={Colors.available} />
+            <Text style={styles.statText}>
+              <Text style={[styles.statNum, { color: Colors.available }]}>{info.count}</Text>
+              {' confirmed'}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.emptyHint}>
+          Share your code — you'll see here as soon as someone joins with it.
+        </Text>
+      )}
     </View>
   );
 }
@@ -58,7 +85,25 @@ const makeStyles = () => StyleSheet.create({
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   title: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.onSurface, flex: 1 },
-  count: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: Colors.available },
+  // Referral progress: signups (immediate) + confirmed conversions
+  statsRow: {
+    flexDirection: 'row',
+    gap: 18,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceContainerHigh,
+  },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  statText: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
+  statNum: { fontFamily: 'PlusJakartaSans_700Bold', color: Colors.primary, fontSize: 14 },
+  emptyHint: {
+    fontSize: 12.5,
+    color: Colors.outline,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 12,
+    lineHeight: 18,
+  },
   row: { flexDirection: 'row', gap: 10 },
   codeBox: {
     flex: 1,

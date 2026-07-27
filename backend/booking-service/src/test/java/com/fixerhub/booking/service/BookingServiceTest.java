@@ -65,6 +65,23 @@ class BookingServiceTest {
         assertEquals("PENDING", response.getStatus());
         assertEquals(1L, response.getCustomerId());
         assertEquals(new BigDecimal("100.00"), response.getAmount());
+        // WORKER NOTIFICATIONS: creating a booking must announce it so the
+        // worker is pushed immediately instead of discovering it by refreshing.
+        verify(bookingEventPublisher).publishBookingCreated(any(), eq(1L), eq(2L), eq("Plumbing"));
+    }
+
+    @Test
+    void customerCancel_notifiesWorkerSide() {
+        Booking booking = existingBooking();
+        when(bookingRepository.findById(3L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(i -> i.getArgument(0));
+
+        BookingResponse response = bookingService.cancelBooking(3L);
+
+        assertEquals("CANCELLED", response.getStatus());
+        // Cancelling used to be silent; the worker must now be told, and the
+        // "CUSTOMER" marker tells the consumer which side to notify.
+        verify(bookingEventPublisher).publishStatusUpdate(3L, "CANCELLED", 2L, "CUSTOMER");
     }
 
     @Test

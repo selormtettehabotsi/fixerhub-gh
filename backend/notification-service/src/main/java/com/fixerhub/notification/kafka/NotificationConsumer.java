@@ -33,7 +33,10 @@ public class NotificationConsumer {
                         node.path("bookingId").isNumber() ? node.path("bookingId").asLong() : null,
                         node.path("customerPhone").isTextual() ? node.path("customerPhone").asText() : null,
                         node.path("status").isTextual() ? node.path("status").asText() : null,
-                        node.path("customerId").isNumber() ? node.path("customerId").asLong() : null);
+                        node.path("customerId").isNumber() ? node.path("customerId").asLong() : null,
+                        node.path("workerId").isNumber() ? node.path("workerId").asLong() : null,
+                        node.path("serviceType").isTextual() ? node.path("serviceType").asText() : null,
+                        node.path("cancelledBy").isTextual() ? node.path("cancelledBy").asText() : null);
             } catch (Exception e) {
                 log.error("Failed to parse JSON booking event: {}", e.getMessage());
             }
@@ -42,12 +45,23 @@ public class NotificationConsumer {
         handleLegacy(message);
     }
 
-    private void handleEvent(String type, Long bookingId, String phoneNumber, String status, Long customerId) {
+    private void handleEvent(String type, Long bookingId, String phoneNumber, String status,
+                             Long customerId, Long workerId, String serviceType, String cancelledBy) {
         if (bookingId == null) {
             log.warn("Ignoring event with no bookingId (type={})", type);
             return;
         }
         switch (type) {
+            // WORKER NOTIFICATIONS: a job just came in — tell the worker straight
+            // away instead of making them discover it by opening the app.
+            case "BOOKING_CREATED" -> {
+                Long workerUserId = lookupClient.userIdForWorker(workerId);
+                String job = (serviceType == null || serviceType.isBlank()) ? "job" : serviceType;
+                lookupClient.pushToUser(pushNotificationService, workerUserId,
+                        "New booking request 🔔",
+                        "You have a new " + job + " request (booking #" + bookingId + "). Open FixerHub to accept it.",
+                        "BOOKING", bookingId);
+            }
             case "COMPLETED" -> {
                 if (phoneNumber != null && !phoneNumber.isEmpty()) {
                     smsService.sendSms(phoneNumber, "Your FixerHub booking #" + bookingId + " is complete!");
@@ -63,6 +77,27 @@ public class NotificationConsumer {
             }
             case "STATUS_UPDATE" -> {
                 log.info("Booking #{} status changed to {}", bookingId, status);
+
+                // CANCELLATION: notify whoever DIDN'T cancel. A worker-side
+                // CANCELLED is a decline (tell the customer); a customer-side
+                // cancellation frees the worker's slot (tell the worker).
+                if ("CANCELLED".equals(status)) {
+                    if ("CUSTOMER".equals(cancelledBy)) {
+                        Long workerUserId = lookupClient.userIdForWorker(workerId);
+                        lookupClient.pushToUser(pushNotificationService, workerUserId,
+                                "Booking cancelled",
+                                "Booking #" + bookingId + " was cancelled by the customer.",
+                                "BOOKING", bookingId);
+                    } else {
+                        Long cid = customerId != null ? customerId : lookupClient.customerIdForBooking(bookingId);
+                        lookupClient.pushToUser(pushNotificationService, cid,
+                                "Booking declined",
+                                "Booking #" + bookingId + " was declined. Open FixerHub to choose another worker.",
+                                "BOOKING", bookingId);
+                    }
+                    return;
+                }
+
                 String statusMsg = switch (status != null ? status : "") {
                     case "ACCEPTED"          -> "Your booking #" + bookingId + " has been accepted!";
                     case "WORKER_ON_THE_WAY" -> "Your worker is on the way — track them live in the app.";
@@ -93,14 +128,15 @@ public class NotificationConsumer {
             if (message.startsWith("COMPLETED:")) {
                 String[] parts = message.split(":");
                 handleEvent("COMPLETED", Long.parseLong(parts[1].trim()),
-                        parts.length > 3 ? parts[3].trim() : null, null, null);
+                        parts.length > 3 ? parts[3].trim() : null, null, null, null, null, null);
             } else if (message.startsWith("STATUS_UPDATE:")) {
                 String[] parts = message.split(":");
                 handleEvent("STATUS_UPDATE", Long.parseLong(parts[1].trim()), null,
-                        parts.length > 2 ? parts[2].trim() : "", null);
+                        parts.length > 2 ? parts[2].trim() : "", null, null, null, null);
             } else if (message.startsWith("QUOTE_SUBMITTED:")) {
                 String[] parts = message.split(":");
-                handleEvent("QUOTE_SUBMITTED", Long.parseLong(parts[1].trim()), null, null, null);
+                handleEvent("QUOTE_SUBMITTED", Long.parseLong(parts[1].trim()), null, null,
+                        null, null, null, null);
             } else {
                 log.warn("Ignoring unknown event format: {}", message);
             }

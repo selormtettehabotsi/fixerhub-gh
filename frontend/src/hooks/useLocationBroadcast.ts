@@ -51,9 +51,15 @@ export function useLocationBroadcast(bookingId: number | null) {
             });
           };
 
-          // FIX: send the current position IMMEDIATELY — with only a watch,
-          // a stationary phone (or iOS with distanceInterval) may never fire
-          // its first tick, so the customer saw "Waiting for worker location…".
+          // SPEED: publish the OS's CACHED position instantly (milliseconds) so
+          // the customer's map shows the worker right away — a fresh GPS fix
+          // can take 5–30s and used to leave "Waiting for worker location…".
+          try {
+            const last = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 });
+            if (last) publish(last.coords.latitude, last.coords.longitude, last.coords.heading);
+          } catch { /* fresh fix below */ }
+
+          // Fresh fix refines the cached one (and covers phones with no cache)
           try {
             const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
             publish(first.coords.latitude, first.coords.longitude, first.coords.heading);

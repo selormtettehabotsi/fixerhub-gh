@@ -42,8 +42,10 @@ export default function ChangePasswordModal({ visible, onClose }: Props) {
       setError('Please fill in all three fields');
       return;
     }
-    if (next.length < 6) {
-      setError('New password must be at least 6 characters');
+    // Mirror the backend rule (8 chars + a number) so the user gets the error
+    // before the round trip, not after.
+    if (next.length < 8 || !/\d/.test(next)) {
+      setError('Password must be at least 8 characters and contain at least one number');
       return;
     }
     if (next !== confirm) {
