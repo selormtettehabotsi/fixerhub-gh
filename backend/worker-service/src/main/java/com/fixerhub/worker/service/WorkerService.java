@@ -2,6 +2,7 @@ package com.fixerhub.worker.service;
 
 import com.fixerhub.worker.dto.WorkerProfileRequest;
 import com.fixerhub.worker.dto.WorkerProfileResponse;
+import com.fixerhub.worker.exception.NotFoundException;
 import com.fixerhub.worker.model.VerificationStatus;
 import com.fixerhub.worker.model.Worker;
 import com.fixerhub.worker.repository.WorkerRepository;
@@ -23,6 +24,8 @@ public class WorkerService {
 
     private final WorkerRepository workerRepository;
     private final GeocodingService geocodingService;
+    /** Load-balanced (Eureka) — used to fan KYC decisions out to the worker. */
+    private final org.springframework.web.client.RestTemplate restTemplate;
 
     public WorkerProfileResponse createProfile(WorkerProfileRequest request) {
         Worker worker = Worker.builder()
@@ -47,10 +50,50 @@ public class WorkerService {
         return toResponse(workerRepository.save(worker));
     }
 
+    /**
+     * VISIBILITY GATE: a worker is only discoverable by customers once an admin
+     * has APPROVED their KYC.
+     *
+     * This is enforced here, in the service, rather than by the client passing
+     * `verified=true`. The customer app did send that flag, but a flag the
+     * caller controls is not a rule — anyone hitting the API directly, or a
+     * future screen that forgets the parameter, would surface unvetted workers.
+     */
+    private boolean isPubliclyVisible(Worker w) {
+        return VerificationStatus.APPROVED.equals(w.getVerificationStatus());
+    }
+
     @Cacheable(value = "worker", key = "#id")
     public WorkerProfileResponse getWorkerById(Long id) {
         Worker worker = workerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Worker not found"));
+                .orElseThrow(() -> new NotFoundException("Worker not found"));
+        // Deliberately the same error as a missing worker: an unapproved
+        // profile shouldn't be probeable by guessing IDs. Owners still read
+        // their own profile via /workers/by-user/{userId}, and service-to-
+        // service callers use getWorkerByIdInternal below.
+        if (!isPubliclyVisible(worker)) {
+            throw new NotFoundException("Worker not found");
+        }
+        return toResponse(worker);
+    }
+
+    /**
+     * SERVICE-TO-SERVICE lookup — NOT gated on verification.
+     *
+     * This exists because /workers/internal/{id} used to share getWorkerById.
+     * Gating that method alone would have broken every internal caller for
+     * exactly the workers the gate cares about: booking-service's own approval
+     * check would 404 and fall through to its "allow on error" branch, chat
+     * peer lookup would fail for existing conversations, and ownership checks
+     * that resolve workerId -> userId would return null.
+     *
+     * Separate cache key so the gated and ungated results can't collide in the
+     * "worker" cache.
+     */
+    @Cacheable(value = "worker", key = "'internal:' + #id")
+    public WorkerProfileResponse getWorkerByIdInternal(Long id) {
+        Worker worker = workerRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Worker not found"));
         return toResponse(worker);
     }
 
@@ -179,12 +222,18 @@ public class WorkerService {
                 .collect(Collectors.toList());
     }
 
+    /** PUBLIC browse list — approved workers only (see isPubliclyVisible). */
     public Page<WorkerProfileResponse> getAllWorkers(Pageable pageable) {
-        return workerRepository.findAll(pageable).map(this::toResponse);
+        return workerRepository.findByVerificationStatus(VerificationStatus.APPROVED, pageable)
+                .map(this::toResponse);
     }
 
+    /** ADMIN STATS: "active" means discoverable by customers, so unapproved
+     *  workers no longer inflate the number. */
     public int getActiveWorkerCount() {
-        return workerRepository.findAllAvailableOrUnset().size();
+        return (int) workerRepository.findAllAvailableOrUnset().stream()
+                .filter(this::isPubliclyVisible)
+                .count();
     }
 
     /** ADMIN STATS: workers whose PRO plan hasn't expired yet. */
@@ -253,7 +302,11 @@ public class WorkerService {
         worker.setVerificationStatus(VerificationStatus.APPROVED);
         worker.setVerified(true);
         worker.setVerificationNote(null);
-        return toResponse(workerRepository.save(worker));
+        Worker saved = workerRepository.save(worker);
+        notifyDecision(saved, "You're verified ✅",
+                "Your identity has been verified. You now appear in customer searches and can start "
+                        + "receiving job requests.");
+        return toResponse(saved);
     }
 
     @Caching(evict = {
@@ -266,7 +319,12 @@ public class WorkerService {
         worker.setVerificationStatus(VerificationStatus.DECLINED);
         worker.setVerified(false);
         worker.setVerificationNote(note);
-        return toResponse(workerRepository.save(worker));
+        Worker saved = workerRepository.save(worker);
+        notifyDecision(saved, "Verification declined",
+                (note == null || note.isBlank())
+                        ? "Your documents could not be verified. Open the app to submit clearer photos."
+                        : "Reason: " + note.trim());
+        return toResponse(saved);
     }
 
     @Caching(evict = {
@@ -278,7 +336,48 @@ public class WorkerService {
                 .orElseThrow(() -> new RuntimeException("Worker not found"));
         worker.setVerificationStatus(VerificationStatus.RESUBMIT_REQUESTED);
         worker.setVerificationNote(note);
-        return toResponse(workerRepository.save(worker));
+        Worker saved = workerRepository.save(worker);
+        notifyDecision(saved, "New documents needed",
+                (note == null || note.isBlank())
+                        ? "Please upload clearer photos of your ID and headshot, then resubmit."
+                        : "What we need: " + note.trim());
+        return toResponse(saved);
+    }
+
+    /**
+     * KYC DECISIONS: tell the worker what happened.
+     *
+     * Approve/decline/resubmit used to update the row and stop there, so a
+     * declined worker was never told — they'd only find out by reopening the
+     * verification screen on the off-chance. notification-service records every
+     * push in the in-app inbox too, so this still works without a live FCM
+     * token (Expo Go, or a worker who declined push permissions).
+     *
+     * Best-effort by design: a notification outage must not fail the admin's
+     * review action, which has already been committed above.
+     */
+    private void notifyDecision(Worker worker, String title, String body) {
+        if (worker.getUserId() == null) {
+            log.warn("Worker {} has no userId — cannot notify of KYC decision", worker.getId());
+            return;
+        }
+        try {
+            java.util.Map<String, String> payload = new java.util.HashMap<>();
+            payload.put("userId", String.valueOf(worker.getUserId()));
+            payload.put("title", title);
+            payload.put("body", body);
+            // SMS as well: verification matters enough to reach a worker who
+            // isn't in the app, and the phone is already on the profile.
+            if (worker.getPhone() != null && !worker.getPhone().isBlank()) {
+                payload.put("phone", worker.getPhone());
+                payload.put("sms", "FixerHub: " + title + ". " + body);
+            }
+            restTemplate.postForEntity(
+                    "http://notification-service/notifications/push", payload, Void.class);
+        } catch (Exception e) {
+            log.warn("Could not notify worker {} of KYC decision '{}': {}",
+                    worker.getId(), title, e.getMessage());
+        }
     }
 
     /** Update pricing info (min/max price + pricing style). */
@@ -322,7 +421,14 @@ public class WorkerService {
                 .collect(Collectors.toList());
     }
 
-    @Cacheable(value = "nearby", key = "#lat + ':' + #lng + ':' + #radiusKm + ':' + #skill + ':' + #minRating + ':' + #verified")
+    /**
+     * Nearby search. The `verified` parameter is retained so existing clients
+     * keep working, but it no longer affects the result — KYC approval is a
+     * precondition for appearing at all. It's also dropped from the cache key,
+     * since keying on a parameter that can't change the output would just
+     * store the same list twice.
+     */
+    @Cacheable(value = "nearby", key = "#lat + ':' + #lng + ':' + #radiusKm + ':' + #skill + ':' + #minRating")
     public List<WorkerProfileResponse> getNearbyWorkers(double lat, double lng,
                                                          double radiusKm, String skill,
                                                          Double minRating, Boolean verified) {
@@ -332,7 +438,11 @@ public class WorkerService {
                 .filter(w -> w.getLatitude() != null && w.getLongitude() != null)
                 .filter(w -> skill == null || skill.isEmpty() || skill.equalsIgnoreCase(w.getSkill()))
                 .filter(w -> minRating == null || (w.getRating() != null && w.getRating() >= minRating))
-                .filter(w -> verified == null || !verified || Boolean.TRUE.equals(w.getVerified()))
+                // KYC GATE: unconditional. The `verified` request param used to
+                // decide this, so a caller that simply omitted it saw unvetted
+                // workers. Admin approval is now a precondition for being
+                // discoverable, and the param can no longer widen the set.
+                .filter(this::isPubliclyVisible)
                 .map(w -> {
                     double distance = geocodingService.distanceKm(lat, lng, w.getLatitude(), w.getLongitude());
                     WorkerProfileResponse response = toResponse(w);
@@ -350,7 +460,11 @@ public class WorkerService {
                 .filter(w -> w.getLatitude() == null || w.getLongitude() == null)
                 .filter(w -> skill == null || skill.isEmpty() || skill.equalsIgnoreCase(w.getSkill()))
                 .filter(w -> minRating == null || (w.getRating() != null && w.getRating() >= minRating))
-                .filter(w -> verified == null || !verified || Boolean.TRUE.equals(w.getVerified()))
+                // KYC GATE: unconditional. The `verified` request param used to
+                // decide this, so a caller that simply omitted it saw unvetted
+                // workers. Admin approval is now a precondition for being
+                // discoverable, and the param can no longer widen the set.
+                .filter(this::isPubliclyVisible)
                 .map(this::toResponse)
                 .collect(Collectors.toList());
 

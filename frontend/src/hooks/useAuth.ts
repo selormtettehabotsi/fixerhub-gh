@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logoutServer } from '../api/auth';
+import { signOut } from '../utils/signOut';
 import * as tokenStorage from '../utils/tokenStorage';
 
 interface AuthState {
@@ -38,10 +38,9 @@ export function useAuth() {
   }
 
   const logout = useCallback(async () => {
-    // TOKENS (H6): revoke the refresh token server-side, then clear local state.
-    const refreshToken = await tokenStorage.getItem('refreshToken');
-    await logoutServer(refreshToken);
-    await tokenStorage.multiRemove(['token', 'refreshToken', 'role', 'userId', 'name', 'phone']);
+    // Local wipe first, server revocation in the background — see utils/signOut.
+    // Waiting on the network here made sign-out feel broken on a weak signal.
+    await signOut();
     setState({ token: null, role: null, userId: null, name: null, phone: null, loading: false });
   }, []);
 

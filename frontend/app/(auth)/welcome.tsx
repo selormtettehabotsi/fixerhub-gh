@@ -113,8 +113,11 @@ export default function WelcomeScreen() {
       </View>
 
       <View style={styles.bottomArea}>
+        {/* "Get Started" goes to the role question, not straight to the form:
+            role decides which whole app the person gets, so it shouldn't be a
+            toggle they can skim past on the register screen. */}
         {isLast ? (
-          <TouchableOpacity onPress={() => router.replace('/(auth)/register')} activeOpacity={0.85}>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/role')} activeOpacity={0.85}>
             <LinearGradient
               colors={[Colors.primary, Colors.primaryContainer]}
               start={{ x: 0, y: 0 }}

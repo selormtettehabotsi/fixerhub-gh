@@ -26,8 +26,17 @@ public class BookingService {
     private final BookingEventPublisher  bookingEventPublisher;
     // M5: Spring-managed ObjectMapper (injected) instead of new-ing one per service
     private final ObjectMapper           objectMapper;
+    // KYC GATE: used to confirm the target worker is admin-approved
+    private final WorkerClient           workerClient;
 
     public BookingResponse createBooking(BookingRequest request) {
+        // KYC GATE: unapproved workers are hidden from search, but workerId is
+        // just a number in the body — without this an unvetted worker could
+        // still be booked directly.
+        if (!workerClient.isApproved(request.getWorkerId())) {
+            throw new BadRequestException(
+                    "This worker is not available for bookings yet.");
+        }
         Booking booking = Booking.builder()
                 .customerId(request.getCustomerId())
                 .workerId(request.getWorkerId())

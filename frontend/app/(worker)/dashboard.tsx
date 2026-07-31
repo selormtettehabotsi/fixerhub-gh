@@ -32,6 +32,7 @@ import { useTabBar } from '../../src/context/TabBarContext';
 import { useLocationBroadcast } from '../../src/hooks/useLocationBroadcast';
 import { useLocation } from '../../src/hooks/useLocation';
 import NotificationBell from '../../src/components/NotificationBell';
+import type { VerificationStatus } from '../../src/api/admin';
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: Colors.warning,
@@ -80,6 +81,9 @@ export default function WorkerDashboard() {
   const [name, setName] = useState('');
   const [profilePicture, setProfilePicture] = useState('');
   const [workerId, setWorkerId] = useState<string | null>(null);
+  // KYC verification state for the prompt card
+  const [verifStatus, setVerifStatus] = useState<VerificationStatus>('NONE');
+  const [verifNote, setVerifNote] = useState<string | null>(null);
   const { onScroll } = useTabBar();
 
   // LIVE TRACKING: while any booking is "On the Way", stream this worker's GPS
@@ -123,6 +127,9 @@ export default function WorkerDashboard() {
     try {
       const profile = await getWorkerByUserId(id);
       setAvailableState(profile.available);
+      // KYC status drives the prompt card at the top of the list
+      setVerifStatus((profile.verificationStatus ?? 'NONE') as VerificationStatus);
+      setVerifNote(profile.verificationNote ?? null);
       const [bookingData, hiddenRaw] = await Promise.all([
         getBookingsByWorker(profile.id),
         AsyncStorage.getItem(HIDDEN_KEY),
@@ -297,11 +304,17 @@ export default function WorkerDashboard() {
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         ListHeaderComponent={
-          loading && bookings.length === 0 ? (
-            <ActivityIndicator size="large" color={Colors.primary} style={styles.loader} />
-          ) : (
-            <Text style={styles.sectionTitle}>Your Jobs</Text>
-          )
+          <>
+            {/* KYC: the dashboard is where workers actually land, so the
+                verification prompt lives here rather than only inside the
+                profile screen. Silent once APPROVED. */}
+            <VerificationPrompt status={verifStatus} note={verifNote} />
+            {loading && bookings.length === 0 ? (
+              <ActivityIndicator size="large" color={Colors.primary} style={styles.loader} />
+            ) : (
+              <Text style={styles.sectionTitle}>Your Jobs</Text>
+            )}
+          </>
         }
         ListEmptyComponent={
           !loading ? (
@@ -502,9 +515,95 @@ export default function WorkerDashboard() {
   );
 }
 
+// ─── VerificationPrompt ──────────────────────────────────────────────────────
+
+/**
+ * KYC nudge on the worker's home screen.
+ *
+ * Verified workers are the only ones customers see when they filter by
+ * "verified", so skipping KYC quietly costs a worker jobs. Previously nothing
+ * on the dashboard mentioned it at all and the upload form was hidden inside a
+ * collapsed accordion on the profile screen.
+ *
+ * Renders NOTHING once APPROVED — a permanent banner would just become noise.
+ */
+function VerificationPrompt({ status, note }: { status: VerificationStatus; note: string | null }) {
+  const styles = useThemedStyles(makeStyles);
+  if (status === 'APPROVED') return null;
+
+  const config: Record<Exclude<VerificationStatus, 'APPROVED'>, {
+    icon: React.ComponentProps<typeof Ionicons>['name'];
+    tint: string;
+    title: string;
+    body: string;
+    cta: string;
+  }> = {
+    NONE: {
+      icon: 'shield-outline',
+      tint: Colors.primary,
+      title: 'Customers cannot find you yet',
+      body: 'Verification is required before your profile appears in search. Upload your ID to get listed.',
+      cta: 'Start verification',
+    },
+    PENDING: {
+      icon: 'time-outline',
+      tint: Colors.warning,
+      title: 'Verification under review',
+      body: "We're checking your documents. You'll appear in search once you're approved — we'll notify you.",
+      cta: 'View submission',
+    },
+    DECLINED: {
+      icon: 'close-circle-outline',
+      tint: Colors.error,
+      title: 'Verification declined',
+      body: note ?? 'Your documents could not be verified, so your profile is not listed. Please submit clearer photos.',
+      cta: 'Try again',
+    },
+    RESUBMIT_REQUESTED: {
+      icon: 'refresh-circle-outline',
+      tint: Colors.warning,
+      title: 'New documents needed',
+      body: note ?? 'Please upload clearer photos of your ID and headshot.',
+      cta: 'Resubmit',
+    },
+  };
+
+  const c = config[status as Exclude<VerificationStatus, 'APPROVED'>];
+  // PENDING is informational, so it stays quiet — no accent border, no button.
+  const quiet = status === 'PENDING';
+
+  return (
+    <TouchableOpacity
+      style={[styles.verifyCard, !quiet && { borderLeftWidth: 3, borderLeftColor: c.tint }]}
+      onPress={() => router.push('/worker/verification')}
+      activeOpacity={0.85}
+    >
+      <View style={styles.verifyCardTop}>
+        <Ionicons name={c.icon} size={20} color={c.tint} />
+        <Text style={styles.verifyCardTitle}>{c.title}</Text>
+        <Ionicons name="chevron-forward" size={18} color={Colors.outline} />
+      </View>
+      <Text style={styles.verifyCardBody}>{c.body}</Text>
+      {!quiet && <Text style={[styles.verifyCardCta, { color: c.tint }]}>{c.cta} →</Text>}
+    </TouchableOpacity>
+  );
+}
+
 const makeStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+
+  // KYC prompt card (top of the job list)
+  verifyCard: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  verifyCardTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  verifyCardTitle: { flex: 1, fontSize: 15, color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
+  verifyCardBody: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', lineHeight: 19 },
+  verifyCardCta: { fontSize: 13, fontFamily: 'Inter_600SemiBold', marginTop: 10 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerAvatar: { width: 44, height: 44, borderRadius: 22 },
   headerAvatarPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },

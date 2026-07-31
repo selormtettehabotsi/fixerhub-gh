@@ -35,6 +35,11 @@ class BookingServiceTest {
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
+    /** KYC GATE: createBooking now asks worker-service whether the worker is
+     *  approved before accepting the job. */
+    @Mock
+    private WorkerClient workerClient;
+
     @InjectMocks
     private BookingService bookingService;
 
@@ -58,6 +63,7 @@ class BookingServiceTest {
         request.setServiceType("Plumbing");
         request.setAmount(new BigDecimal("100.00"));
 
+        when(workerClient.isApproved(2L)).thenReturn(true);
         when(bookingRepository.save(any(Booking.class))).thenAnswer(i -> i.getArgument(0));
 
         BookingResponse response = bookingService.createBooking(request);
@@ -68,6 +74,24 @@ class BookingServiceTest {
         // WORKER NOTIFICATIONS: creating a booking must announce it so the
         // worker is pushed immediately instead of discovering it by refreshing.
         verify(bookingEventPublisher).publishBookingCreated(any(), eq(1L), eq(2L), eq("Plumbing"));
+    }
+
+    /** KYC GATE: hiding unapproved workers from search isn't enough on its own,
+     *  because workerId is just a number in the request body. */
+    @Test
+    void createBooking_rejectsUnapprovedWorker() {
+        BookingRequest request = new BookingRequest();
+        request.setCustomerId(1L);
+        request.setWorkerId(99L);
+        request.setServiceType("Plumbing");
+
+        when(workerClient.isApproved(99L)).thenReturn(false);
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> bookingService.createBooking(request));
+        assertTrue(ex.getMessage().contains("not available for bookings"));
+        verify(bookingRepository, never()).save(any(Booking.class));
+        verifyNoInteractions(bookingEventPublisher);
     }
 
     @Test

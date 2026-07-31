@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useThemedStyles } from '../../src/context/ThemeContext';
 import {
   View,
@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
-import { pickAndUploadImage, pickAndUploadDocument } from '../../src/hooks/useImageUpload';
+import { pickAndUploadImage } from '../../src/hooks/useImageUpload';
 import client from '../../src/api/client';
 import type { VerificationStatus } from '../../src/api/admin';
 import { formatWorkerId } from '../../src/utils/formatId';
@@ -43,9 +43,7 @@ interface WorkerProfile {
   verified: boolean;
   verificationStatus: VerificationStatus;
   verificationNote?: string;
-  idFrontUrl?: string;
-  idBackUrl?: string;
-  headshotUrl?: string;
+  // KYC document URLs are only needed by /worker/verification now.
   minPrice?: number;
   maxPrice?: number;
   pricingStyle?: string;
@@ -65,14 +63,7 @@ export default function WorkerProfileScreen() {
   // Worker-service profile (for verification data)
   const [workerProfile, setWorkerProfile]     = useState<WorkerProfile | null>(null);
 
-  // KYC upload states
-  const [uploadingIdFront, setUploadingIdFront]   = useState(false);
-  const [uploadingIdBack, setUploadingIdBack]     = useState(false);
-  const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
-  const [idFrontUrl, setIdFrontUrl]     = useState('');
-  const [idBackUrl, setIdBackUrl]       = useState('');
-  const [headshotUrl, setHeadshotUrl]   = useState('');
-  const [submitting, setSubmitting]     = useState(false);
+  // KYC uploads live on /worker/verification — this screen only shows status.
 
   // Pricing
   const [minPrice, setMinPrice]           = useState('');
@@ -81,12 +72,13 @@ export default function WorkerProfileScreen() {
 
   // Mobile money network for payouts
   const [momoNetwork, setMomoNetwork]   = useState('MTN');
+  // Guards the focus-refetch above. A ref (not state) because loadWorkerProfile
+  // is a stable useCallback and would otherwise close over a stale value.
+  const businessDirtyRef = useRef(false);
   // Business Settings: collapses verification/pricing/momo behind one button
   const [showBusinessSettings, setShowBusinessSettings] = useState(false);
   const [savingMomo, setSavingMomo]     = useState(false);
 
-  // Full-screen image viewer
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
   // Delete account
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -124,12 +116,16 @@ export default function WorkerProfileScreen() {
     try {
       const res = await client.get<WorkerProfile>(`/workers/by-user/${id}`);
       setWorkerProfile(res.data);
-      setIdFrontUrl(res.data.idFrontUrl ?? '');
-      setIdBackUrl(res.data.idBackUrl ?? '');
-      setHeadshotUrl(res.data.headshotUrl ?? '');
-      if (res.data.minPrice != null) setMinPrice(String(res.data.minPrice));
-      if (res.data.maxPrice != null) setMaxPrice(String(res.data.maxPrice));
-      if (res.data.momoNetwork) setMomoNetwork(res.data.momoNetwork);
+      // DON'T clobber edits in progress. This runs on every screen focus, so
+      // typing a new price and then tabbing away (or coming back from the
+      // verification screen / the Paystack browser) used to silently revert
+      // the field to the saved value. Only seed the inputs when the worker
+      // has nothing unsaved.
+      if (!businessDirtyRef.current) {
+        setMinPrice(res.data.minPrice != null ? String(res.data.minPrice) : '');
+        setMaxPrice(res.data.maxPrice != null ? String(res.data.maxPrice) : '');
+        if (res.data.momoNetwork) setMomoNetwork(res.data.momoNetwork);
+      }
     } catch {
       // Silently ignore — don't block profile display
     }
@@ -137,6 +133,22 @@ export default function WorkerProfileScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadWorkerProfile(); }, [loadWorkerProfile]));
+
+  // ─── Business Settings: unsaved-changes tracking ──────────────────────────
+  // Derived by comparing the inputs to what the server last returned, rather
+  // than hand-setting a flag in every onChange — one source of truth, and it
+  // resets by itself once a save round-trips.
+  const savedMin  = workerProfile?.minPrice != null ? String(workerProfile.minPrice) : '';
+  const savedMax  = workerProfile?.maxPrice != null ? String(workerProfile.maxPrice) : '';
+  const savedMomo = workerProfile?.momoNetwork ?? 'MTN';
+
+  const pricingChanged = minPrice !== savedMin || maxPrice !== savedMax;
+  const momoChanged    = momoNetwork !== savedMomo;
+  const businessDirty  = pricingChanged || momoChanged;
+
+  useEffect(() => {
+    businessDirtyRef.current = pricingChanged || momoChanged;
+  }, [pricingChanged, momoChanged]);
 
   function getInitials(n: string) {
     return n.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
@@ -192,66 +204,6 @@ export default function WorkerProfileScreen() {
     }
   }
 
-  // ─── KYC document uploads ─────────────────────────────────────────────────
-
-  async function uploadDoc(
-    setter: (url: string) => void,
-    loadingSetter: (v: boolean) => void,
-    folder: string,
-    isHeadshot = false,
-  ) {
-    loadingSetter(true);
-    try {
-      const url = isHeadshot
-        ? await pickAndUploadImage(folder)
-        : await pickAndUploadDocument(folder);
-      setter(url);
-    } catch (err: any) {
-      if (!err.message?.includes('No image')) {
-        Alert.alert('Upload Error', err.message ?? 'Upload failed');
-      }
-    } finally {
-      loadingSetter(false);
-    }
-  }
-
-  async function handleSubmitVerification() {
-    if (!idFrontUrl || !idBackUrl || !headshotUrl) {
-      Alert.alert('Missing Photos', 'Please upload all three photos before submitting.');
-      return;
-    }
-    if (!workerProfile?.id) {
-      Alert.alert('Error', 'Could not find your worker profile. Please try again.');
-      return;
-    }
-    Alert.alert(
-      'Submit for Verification',
-      'Send your ID photos and headshot to admin for review?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              await client.post(`/workers/${workerProfile.id}/verification/submit`, {
-                idFrontUrl,
-                idBackUrl,
-                headshotUrl,
-              });
-              await loadWorkerProfile();
-              Alert.alert('Submitted!', 'Your documents are being reviewed. You will hear back once approved.');
-            } catch (err: any) {
-              Alert.alert('Error', err.message ?? 'Submission failed');
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ],
-    );
-  }
-
   async function handleSavePricing() {
     // Validate before sending — NaN used to silently save as null
     const min = minPrice.trim() ? parseFloat(minPrice) : null;
@@ -286,6 +238,9 @@ export default function WorkerProfileScreen() {
     try {
       const id = userId || await AsyncStorage.getItem('userId');
       await updateMomoNetwork(id!, momoNetwork);
+      // Refresh so the saved value becomes the new baseline — without this the
+      // section stays marked "unsaved" forever after a successful save.
+      await loadWorkerProfile();
       Alert.alert('Saved', 'Your mobile money network has been updated. Payouts will go to this number.');
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.error ?? err.message ?? 'Failed to save MoMo network');
@@ -295,11 +250,9 @@ export default function WorkerProfileScreen() {
   }
 
   async function handleLogout() {
-    // TOKENS (H6/M1): revoke the refresh token server-side, clear keychain + storage
-    const { logoutServer } = await import('../../src/api/auth');
-    const tokenStorage = await import('../../src/utils/tokenStorage');
-    await logoutServer(await tokenStorage.getItem('refreshToken'));
-    await tokenStorage.multiRemove(['token', 'refreshToken', 'role', 'userId', 'name', 'email', 'phone', 'profilePicture']);
+    // Local wipe first, server revocation in the background — see utils/signOut.
+    const { signOut } = await import('../../src/utils/signOut');
+    await signOut();
     router.replace('/(auth)/welcome');
   }
 
@@ -380,25 +333,25 @@ export default function WorkerProfileScreen() {
           <InfoRow iconName="finger-print-outline" label="Worker ID" value={userId ? formatWorkerId(userId) : '—'} />
         </View>
 
-        {/* ── Business Settings — verification, pricing, MoMo payouts ────── */}
+        {/* ── Identity Verification ─────────────────────────────────────────
+            Deliberately OUTSIDE the Business Settings accordion. The uploads
+            live on /worker/verification; this row answers "am I verified?" at
+            a glance, which is useless if it's hidden behind a collapse. */}
         <TouchableOpacity
-          style={styles.businessBtn}
-          onPress={() => setShowBusinessSettings((v) => !v)}
+          style={styles.verifyRow}
+          onPress={() => router.push('/worker/verification')}
           activeOpacity={0.85}
         >
-          <View style={styles.businessBtnLeft}>
-            <View style={styles.businessBtnIcon}>
-              <Ionicons name="briefcase-outline" size={20} color={Colors.primary} />
-            </View>
-            <View>
-              <Text style={styles.businessBtnTitle}>Business Settings</Text>
-              <Text style={styles.businessBtnSub}>Verification · Price range · MoMo payouts</Text>
-            </View>
+          <View style={[styles.verifyIcon, { backgroundColor: statusInfo.bg }]}>
+            <Ionicons name={statusInfo.icon} size={20} color={statusInfo.color} />
           </View>
-          <Ionicons name={showBusinessSettings ? 'chevron-up' : 'chevron-down'} size={20} color={Colors.outline} />
+          <View style={styles.verifyTextCol}>
+            <Text style={styles.verifyTitle}>Identity Verification</Text>
+            <Text style={[styles.verifySub, { color: statusInfo.color }]}>{statusInfo.label}</Text>
+          </View>
+          {canSubmit && <View style={styles.verifyDot} />}
+          <Ionicons name="chevron-forward" size={18} color={Colors.outline} />
         </TouchableOpacity>
-
-        {showBusinessSettings && (<>
 
         {/* ── FixerHub Pro subscription ─────────────────────────────────── */}
         <View style={styles.sectionHeader}>
@@ -478,101 +431,30 @@ export default function WorkerProfileScreen() {
           )}
         </View>
 
-        {/* ── Identity Verification ─────────────────────────────────────── */}
-        <View style={styles.sectionHeader}>
-          <Ionicons name="id-card-outline" size={20} color={Colors.primary} />
-          <Text style={styles.sectionTitle}>Identity Verification</Text>
-        </View>
-
-        {/* Verification status badge */}
-        <View style={[styles.statusBadge, { backgroundColor: statusInfo.bg }]}>
-          <Ionicons name={statusInfo.icon} size={22} color={statusInfo.color} />
-          <View style={styles.statusTextCol}>
-            <Text style={[styles.statusLabel, { color: statusInfo.color }]}>{statusInfo.label}</Text>
-            {status === 'APPROVED' && (
-              <Text style={styles.statusSub}>You are verified and trusted by FixerHub customers</Text>
-            )}
-            {status === 'PENDING' && (
-              <Text style={styles.statusSub}>Our team is reviewing your documents — check back soon</Text>
-            )}
-            {(status === 'DECLINED' || status === 'RESUBMIT_REQUESTED') && workerProfile?.verificationNote && (
-              <Text style={styles.statusSub}>Admin note: {workerProfile.verificationNote}</Text>
-            )}
-            {status === 'NONE' && (
-              <Text style={styles.statusSub}>Verified workers appear higher in search results and earn customer trust</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Upload slots — only when worker can (re)submit */}
-        {canSubmit && (
-          <View style={styles.docsCard}>
-            <Text style={styles.docsIntro}>
-              {status === 'NONE'
-                ? 'Upload your National ID (front & back) and a clear passport-style headshot.'
-                : 'Please upload new, clearer photos and resubmit for review.'}
-            </Text>
-
-            <DocSlot
-              label="National ID — Front"
-              sublabel="Front side of Ghana Card or Passport"
-              icon="card-outline"
-              url={idFrontUrl}
-              loading={uploadingIdFront}
-              onUpload={() => uploadDoc(setIdFrontUrl, setUploadingIdFront, 'kyc-id', false)}
-              onView={() => idFrontUrl && setViewerUri(idFrontUrl)}
-            />
-            <DocSlot
-              label="National ID — Back"
-              sublabel="Back side of Ghana Card"
-              icon="card-outline"
-              url={idBackUrl}
-              loading={uploadingIdBack}
-              onUpload={() => uploadDoc(setIdBackUrl, setUploadingIdBack, 'kyc-id', false)}
-              onView={() => idBackUrl && setViewerUri(idBackUrl)}
-            />
-            <DocSlot
-              label="Headshot / Passport Photo"
-              sublabel="Clear, well-lit face photo — no hats or shades"
-              icon="person-circle-outline"
-              url={headshotUrl}
-              loading={uploadingHeadshot}
-              onUpload={() => uploadDoc(setHeadshotUrl, setUploadingHeadshot, 'kyc-headshot', true)}
-              onView={() => headshotUrl && setViewerUri(headshotUrl)}
-            />
-
-            <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                (!idFrontUrl || !idBackUrl || !headshotUrl || submitting) && styles.submitBtnDisabled,
-              ]}
-              onPress={handleSubmitVerification}
-              disabled={!idFrontUrl || !idBackUrl || !headshotUrl || submitting}
-              activeOpacity={0.85}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-                  <Text style={styles.submitBtnText}>Submit for Verification</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Read-only thumbnails when PENDING or APPROVED */}
-        {(status === 'PENDING' || status === 'APPROVED') && workerProfile?.idFrontUrl && (
-          <View style={styles.docsCard}>
-            <Text style={styles.docsIntro}>Your submitted documents:</Text>
-            <View style={styles.thumbRow}>
-              <Thumb label="ID Front"  uri={workerProfile.idFrontUrl!}  onView={setViewerUri} />
-              <Thumb label="ID Back"   uri={workerProfile.idBackUrl!}   onView={setViewerUri} />
-              <Thumb label="Headshot"  uri={workerProfile.headshotUrl!} onView={setViewerUri} />
+        {/* ── Business Settings — pricing + MoMo payouts ─────────────────── */}
+        <TouchableOpacity
+          style={styles.businessBtn}
+          onPress={() => setShowBusinessSettings((v) => !v)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.businessBtnLeft}>
+            <View style={styles.businessBtnIcon}>
+              <Ionicons name="briefcase-outline" size={20} color={Colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.businessBtnTitle}>Business Settings</Text>
+              {/* Collapsing the section with unsaved edits inside would hide
+                  them completely — say so on the closed header. */}
+              <Text style={[styles.businessBtnSub, businessDirty && styles.businessBtnSubDirty]}>
+                {businessDirty ? 'You have unsaved changes' : 'Price range · MoMo payouts'}
+              </Text>
             </View>
           </View>
-        )}
+          {businessDirty && <View style={styles.dirtyDot} />}
+          <Ionicons name={showBusinessSettings ? 'chevron-up' : 'chevron-down'} size={20} color={Colors.outline} />
+        </TouchableOpacity>
+
+        {showBusinessSettings && (<>
 
         {/* ── Pricing ───────────────────────────────────────────────────── */}
         <View style={styles.sectionHeader}>
@@ -607,10 +489,12 @@ export default function WorkerProfileScreen() {
             </View>
           </View>
 
+          {/* Disabled until something actually changes, so "Save" always means
+              there is something to save. */}
           <TouchableOpacity
-            style={[styles.savePricingBtn, savingPricing && styles.submitBtnDisabled]}
+            style={[styles.savePricingBtn, (savingPricing || !pricingChanged) && styles.submitBtnDisabled]}
             onPress={handleSavePricing}
-            disabled={savingPricing}
+            disabled={savingPricing || !pricingChanged}
             activeOpacity={0.85}
           >
             {savingPricing ? (
@@ -618,7 +502,9 @@ export default function WorkerProfileScreen() {
             ) : (
               <>
                 <Ionicons name="checkmark-outline" size={18} color="#fff" />
-                <Text style={styles.submitBtnText}>Save Pricing</Text>
+                <Text style={styles.submitBtnText}>
+                  {pricingChanged ? 'Save Pricing' : 'Pricing saved'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -670,9 +556,9 @@ export default function WorkerProfileScreen() {
           })}
 
           <TouchableOpacity
-            style={[styles.savePricingBtn, savingMomo && styles.submitBtnDisabled]}
+            style={[styles.savePricingBtn, (savingMomo || !momoChanged) && styles.submitBtnDisabled]}
             onPress={handleSaveMomo}
-            disabled={savingMomo}
+            disabled={savingMomo || !momoChanged}
             activeOpacity={0.85}
           >
             {savingMomo ? (
@@ -680,7 +566,9 @@ export default function WorkerProfileScreen() {
             ) : (
               <>
                 <Ionicons name="checkmark-outline" size={18} color="#fff" />
-                <Text style={styles.submitBtnText}>Save MoMo Network</Text>
+                <Text style={styles.submitBtnText}>
+                  {momoChanged ? 'Save MoMo Network' : 'Network saved'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -788,17 +676,6 @@ export default function WorkerProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Full-screen image viewer */}
-      <Modal visible={!!viewerUri} transparent animationType="fade" onRequestClose={() => setViewerUri(null)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalClose} onPress={() => setViewerUri(null)} activeOpacity={0.8}>
-            <Ionicons name="close-circle" size={36} color="#fff" />
-          </TouchableOpacity>
-          {viewerUri && (
-            <Image source={{ uri: viewerUri }} style={styles.modalImage} resizeMode="contain" />
-          )}
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -853,69 +730,6 @@ function MenuRow({ iconName, label, onPress }: {
   );
 }
 
-// ─── DocSlot ─────────────────────────────────────────────────────────────────
-
-function DocSlot({ label, sublabel, icon, url, loading, onUpload, onView }: {
-  label: string;
-  sublabel: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  url: string;
-  loading: boolean;
-  onUpload: () => void;
-  onView: () => void;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <View style={styles.docSlot}>
-      <View style={styles.docSlotInfo}>
-        <Ionicons name={icon} size={20} color={url ? Colors.available : Colors.outline} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.docSlotLabel}>{label}</Text>
-          <Text style={styles.docSlotSub}>{sublabel}</Text>
-        </View>
-      </View>
-      <View style={styles.docSlotActions}>
-        {url ? (
-          <>
-            <TouchableOpacity onPress={onView} style={styles.previewThumb} activeOpacity={0.8}>
-              <Image source={{ uri: url }} style={styles.previewImg} />
-              <View style={styles.previewOverlay}>
-                <Ionicons name="eye-outline" size={14} color="#fff" />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onUpload} style={styles.retakeBtn} activeOpacity={0.8} disabled={loading}>
-              {loading ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="refresh-outline" size={16} color={Colors.primary} />}
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity onPress={onUpload} style={styles.uploadBtn} disabled={loading} activeOpacity={0.85}>
-            {loading ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : (
-              <>
-                <Ionicons name="camera-outline" size={16} color={Colors.primary} />
-                <Text style={styles.uploadBtnText}>Upload</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}
-
-// ─── Thumb ───────────────────────────────────────────────────────────────────
-
-function Thumb({ label, uri, onView }: { label: string; uri: string; onView: (u: string) => void }) {
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <TouchableOpacity style={styles.thumb} onPress={() => onView(uri)} activeOpacity={0.8}>
-      <Image source={{ uri }} style={styles.thumbImg} />
-      <Text style={styles.thumbLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const makeStyles = () => StyleSheet.create({
@@ -961,40 +775,39 @@ const makeStyles = () => StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold' },
 
   // Status badge
-  statusBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginHorizontal: 20, borderRadius: 12, padding: 14, marginBottom: 16 },
-  statusTextCol: { flex: 1 },
-  statusLabel: { fontSize: 15, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 2 },
-  statusSub: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', lineHeight: 18 },
+  // Verification: a status row that navigates to /worker/verification
+  verifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceContainerLowest,
+  },
+  // Business Settings: unsaved-changes signals
+  businessBtnSubDirty: { color: Colors.warning },
+  dirtyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.warning, marginRight: 8 },
+
+  verifyIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  verifyTextCol: { flex: 1 },
+  verifyTitle: { fontSize: 15, color: Colors.onSurface, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
+  verifySub: { fontSize: 13, fontFamily: 'Inter_400Regular' },
+  // Nudge dot — only while there's something for the worker to do
+  verifyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary, marginRight: 4 },
 
   // Docs card
-  docsCard: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 16, marginBottom: 20, gap: 2 },
-  docsIntro: { fontSize: 13, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', lineHeight: 19, marginBottom: 8 },
 
   // Doc slot row
-  docSlot: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.surfaceContainerHigh },
-  docSlotInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
-  docSlotLabel: { fontSize: 14, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
-  docSlotSub: { fontSize: 12, color: Colors.outline, fontFamily: 'Inter_400Regular', lineHeight: 16 },
-  docSlotActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  uploadBtnText: { fontSize: 13, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
 
-  previewThumb: { width: 52, height: 36, borderRadius: 6, overflow: 'hidden' },
-  previewImg: { width: '100%', height: '100%' },
-  previewOverlay: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
 
-  retakeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center' },
 
-  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, marginTop: 8 },
   submitBtnDisabled: { backgroundColor: Colors.surfaceContainerHigh },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
 
   // Read-only thumbs
-  thumbRow: { flexDirection: 'row', gap: 10 },
-  thumb: { flex: 1, alignItems: 'center', gap: 4 },
-  thumbImg: { width: '100%', aspectRatio: 1.4, borderRadius: 8, backgroundColor: Colors.surfaceContainerHigh },
-  thumbLabel: { fontSize: 11, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
 
   // Pricing
   pricingCard: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 16, marginBottom: 24, gap: 2 },
@@ -1079,7 +892,4 @@ const makeStyles = () => StyleSheet.create({
   deleteConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.error, alignItems: 'center' },
   deleteConfirmText: { fontSize: 15, color: '#fff', fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
-  modalClose: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
-  modalImage: { width: '95%', height: '70%' },
 });

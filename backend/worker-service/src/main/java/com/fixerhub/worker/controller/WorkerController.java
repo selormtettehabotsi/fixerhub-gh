@@ -72,10 +72,13 @@ public class WorkerController {
         return ResponseEntity.ok(sanitize(workerService.getWorkerById(id)));
     }
 
-    /** Internal: full (unsanitized) worker record for service-to-service calls — blocked at the gateway. */
+    /** Internal: full (unsanitized) worker record for service-to-service calls — blocked at the gateway.
+     *  Uses the UNGATED lookup: internal callers (booking-service's approval
+     *  check, chat peer resolution, ownership checks) must be able to read
+     *  workers who aren't publicly visible yet. */
     @GetMapping("/internal/{id}")
     public ResponseEntity<WorkerProfileResponse> getWorkerInternal(@PathVariable Long id) {
-        return ResponseEntity.ok(workerService.getWorkerById(id));
+        return ResponseEntity.ok(workerService.getWorkerByIdInternal(id));
     }
 
     /** M4 (internal): auth-service removes the worker profile when the account is deleted. */

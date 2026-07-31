@@ -17,6 +17,14 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "Access denied"));
     }
 
+    /** More specific than the RuntimeException handler below, so Spring picks
+     *  this one first and a missing/invisible worker returns 404, not 400. */
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(NotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleBadRequest(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

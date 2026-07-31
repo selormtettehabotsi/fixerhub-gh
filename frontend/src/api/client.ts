@@ -90,7 +90,16 @@ export async function getFreshAccessToken(): Promise<string | null> {
 }
 
 function isAuthPath(url?: string): boolean {
-  return !!url && (url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh'));
+  return !!url && (
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/refresh') ||
+    // LOGOUT: refreshing a session we're in the middle of destroying is
+    // pointless, and it used to make sign-out three times slower — the logout
+    // call would 401 on an expired access token, trigger a refresh, then retry
+    // the logout, each with its own timeout.
+    url.includes('/auth/logout')
+  );
 }
 
 client.interceptors.response.use(

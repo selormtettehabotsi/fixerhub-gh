@@ -72,6 +72,7 @@ function RootNavigator() {
         <Stack.Screen name="(admin)" />
         <Stack.Screen name="worker/[id]"      options={{ headerShown: true, title: 'Worker Profile',    ...HEADER_STYLE }} />
         <Stack.Screen name="worker/portfolio" options={{ headerShown: true, title: 'Portfolio',          ...HEADER_STYLE }} />
+        <Stack.Screen name="worker/verification" options={{ headerShown: true, title: 'Identity Verification', ...HEADER_STYLE }} />
         <Stack.Screen name="booking/confirm"  options={{ headerShown: true, title: 'Confirm Booking',   ...HEADER_STYLE }} />
         <Stack.Screen name="booking/confirmed" options={{ headerShown: false }} />
         <Stack.Screen name="booking/[id]"     options={{ headerShown: true, title: 'Booking Details',   ...HEADER_STYLE }} />

@@ -23,6 +23,7 @@ import { createBooking } from '../../src/api/bookings';
 import { pickAndUploadImage, takeAndUploadPhoto, pickAndUploadVideo } from '../../src/hooks/useImageUpload';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
 import { useLocation } from '../../src/hooks/useLocation';
+import DatePickerCalendar from '../../src/components/DatePickerCalendar';
 
 const SERVICES = ['Plumbing', 'Electrical', 'Carpentry', 'Painting', 'Cleaning', 'Welding', 'Mason', 'General Repair'];
 
@@ -57,8 +58,11 @@ export default function ConfirmBookingScreen() {
   const [phone, setPhone] = useState('');
   // RETENTION: recurring bookings — completing one auto-creates the next
   const [recurrence, setRecurrence] = useState<'NONE' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('NONE');
-  // SCHEDULING: ASAP (default) or a chosen day + time slot
-  const [schedDay, setSchedDay] = useState<number>(-1);   // -1 = ASAP, 0 = today, 1 = tomorrow…
+  // SCHEDULING: ASAP (default) or a specific date + hour.
+  // `schedDate === null` means ASAP. It used to be a day-offset number capped
+  // at 7 days, which is why a calendar replaced it — customers book further
+  // out than a week for things like painting or a scheduled service.
+  const [schedDate, setSchedDate] = useState<Date | null>(null);
   const [schedHour, setSchedHour] = useState<number>(9);
   const [bookingMedia, setBookingMedia] = useState<MediaItem[]>([]);
   const [imageUploading, setImageUploading] = useState(false);
@@ -77,40 +81,44 @@ export default function ConfirmBookingScreen() {
   const hasVideo = bookingMedia.some((m) => m.type === 'video');
 
   // SCHEDULING helpers ────────────────────────────────────────────────────────
-  const DAY_OPTIONS = React.useMemo(() => {
-    const days: { offset: number; label: string }[] = [{ offset: -1, label: 'ASAP' }];
-    const now = new Date();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() + i);
-      const label =
-        i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
-          : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-      days.push({ offset: i, label });
-    }
-    return days;
-  }, []);
-
-  const HOUR_OPTIONS = [8, 10, 12, 14, 16, 18];
+  // Hours a home visit is realistic in Ghana — 7am to 6pm.
+  const HOUR_OPTIONS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
 
   function hourLabel(h: number): string {
     return h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`;
   }
 
-  /** True when this time slot is already in the past (only matters for Today). */
-  function slotInPast(dayOffset: number, hour: number): boolean {
-    if (dayOffset !== 0) return false;
-    return new Date().getHours() >= hour;
+  const isToday =
+    !!schedDate && schedDate.toDateString() === new Date().toDateString();
+
+  /** Past hours are only unselectable when the chosen date is today. */
+  function hourInPast(hour: number): boolean {
+    return isToday && new Date().getHours() >= hour;
   }
+
+  // If the selected hour becomes invalid (picked "today" after that hour has
+  // passed), move to the next available one instead of silently submitting a
+  // time in the past.
+  React.useEffect(() => {
+    if (schedDate && hourInPast(schedHour)) {
+      const next = HOUR_OPTIONS.find((h) => !hourInPast(h));
+      if (next) setSchedHour(next);
+    }
+  }, [schedDate]);
+
+  const allHoursPast = isToday && HOUR_OPTIONS.every(hourInPast);
 
   /** "YYYY-MM-DDTHH:00:00" for the backend's LocalDateTime, or undefined for ASAP. */
   function buildScheduledAt(): string | undefined {
-    if (schedDay < 0) return undefined;
-    const d = new Date();
-    d.setDate(d.getDate() + schedDay);
+    if (!schedDate) return undefined;
     const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(schedHour)}:00:00`;
+    return `${schedDate.getFullYear()}-${pad(schedDate.getMonth() + 1)}-${pad(schedDate.getDate())}`
+      + `T${pad(schedHour)}:00:00`;
   }
+
+  const dateLabel = schedDate
+    ? schedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
 
   async function addPhoto() {
     if (bookingMedia.length >= MAX_MEDIA) return;
@@ -317,55 +325,96 @@ export default function ConfirmBookingScreen() {
               ))}
             </View>
 
-            {/* SCHEDULING: when should the worker come? */}
+            {/* SCHEDULING: ASAP, or a date from the calendar + a time. */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>When do you need them?</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                {DAY_OPTIONS.map((d) => (
-                  <TouchableOpacity
-                    key={d.offset}
-                    style={[styles.chip, schedDay === d.offset && styles.chipActive]}
-                    onPress={() => setSchedDay(d.offset)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.chipText, schedDay === d.offset && styles.chipTextActive]}>{d.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {schedDay >= 0 && (
-                <View style={styles.slotGrid}>
-                  {HOUR_OPTIONS.map((h) => {
-                    const disabled = slotInPast(schedDay, h);
-                    return (
-                      <TouchableOpacity
-                        key={h}
-                        style={[
-                          styles.slotChip,
-                          schedHour === h && !disabled && styles.slotChipActive,
-                          disabled && styles.slotChipDisabled,
-                        ]}
-                        onPress={() => !disabled && setSchedHour(h)}
-                        activeOpacity={0.8}
-                        disabled={disabled}
-                      >
-                        <Text
+
+              <View style={styles.whenRow}>
+                <TouchableOpacity
+                  style={[styles.whenBtn, !schedDate && styles.whenBtnActive]}
+                  onPress={() => setSchedDate(null)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name="flash-outline"
+                    size={16}
+                    color={!schedDate ? Colors.onPrimary : Colors.onSurfaceVariant}
+                  />
+                  <Text style={[styles.whenBtnText, !schedDate && styles.whenBtnTextActive]}>
+                    As soon as possible
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.whenBtn, !!schedDate && styles.whenBtnActive]}
+                  // Default to tomorrow: "today" is usually what ASAP is for,
+                  // and it avoids opening on a date whose hours have all passed.
+                  onPress={() => {
+                    if (!schedDate) {
+                      const t = new Date();
+                      t.setDate(t.getDate() + 1);
+                      setSchedDate(new Date(t.getFullYear(), t.getMonth(), t.getDate()));
+                    }
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={16}
+                    color={schedDate ? Colors.onPrimary : Colors.onSurfaceVariant}
+                  />
+                  <Text style={[styles.whenBtnText, !!schedDate && styles.whenBtnTextActive]}>
+                    Pick a date
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {schedDate && (
+                <>
+                  <DatePickerCalendar value={schedDate} onChange={setSchedDate} />
+
+                  <Text style={styles.timeLabel}>What time?</Text>
+                  <View style={styles.slotGrid}>
+                    {HOUR_OPTIONS.map((h) => {
+                      const disabled = hourInPast(h);
+                      const active = schedHour === h && !disabled;
+                      return (
+                        <TouchableOpacity
+                          key={h}
                           style={[
-                            styles.slotChipText,
-                            schedHour === h && !disabled && styles.slotChipTextActive,
-                            disabled && { color: Colors.outline },
+                            styles.slotChip,
+                            active && styles.slotChipActive,
+                            disabled && styles.slotChipDisabled,
                           ]}
+                          onPress={() => !disabled && setSchedHour(h)}
+                          activeOpacity={0.8}
+                          disabled={disabled}
                         >
-                          {hourLabel(h)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                          <Text
+                            style={[
+                              styles.slotChipText,
+                              active && styles.slotChipTextActive,
+                              disabled && { color: Colors.outline },
+                            ]}
+                          >
+                            {hourLabel(h)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {allHoursPast && (
+                    <Text style={styles.warnHint}>
+                      No times left today — choose another date, or switch to “As soon as possible”.
+                    </Text>
+                  )}
+                </>
               )}
+
               <Text style={styles.lockedHint}>
-                {schedDay < 0
+                {!schedDate
                   ? 'The worker will come as soon as they accept.'
-                  : `Requested: ${DAY_OPTIONS.find((d) => d.offset === schedDay)?.label} at ${hourLabel(schedHour)} — the worker confirms when accepting.`}
+                  : `Requested: ${dateLabel} at ${hourLabel(schedHour)} — the worker confirms when accepting.`}
               </Text>
             </View>
 
@@ -530,7 +579,35 @@ const makeStyles = () => StyleSheet.create({
   form: { gap: 16 },
   inputGroup: { gap: 6 },
   label: { fontSize: 17, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },
-  chipScroll: { marginVertical: 4 },
+  // SCHEDULING: ASAP / Pick-a-date toggle
+  whenRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  whenBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+  whenBtnActive: { backgroundColor: Colors.primary },
+  whenBtnText: { fontSize: 13.5, color: Colors.onSurfaceVariant, fontFamily: 'Inter_600SemiBold' },
+  whenBtnTextActive: { color: Colors.onPrimary },
+  timeLabel: {
+    fontSize: 14,
+    color: Colors.onSurface,
+    fontFamily: 'Inter_600SemiBold',
+    marginTop: 14,
+  },
+  warnHint: {
+    fontSize: 12,
+    color: Colors.error,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 8,
+    lineHeight: 17,
+  },
   lockedField: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -559,10 +636,6 @@ const makeStyles = () => StyleSheet.create({
   estimateText: { fontSize: 12.5, fontFamily: 'Inter_600SemiBold', color: Colors.onSurface, textAlign: 'center', marginBottom: 8 },
   trustRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 8 },
   trustText: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.onSurfaceVariant, textAlign: 'center', flexShrink: 1 },
-  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surfaceContainerLow, marginRight: 8 },
-  chipActive: { backgroundColor: Colors.primary },
-  chipText: { fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
-  chipTextActive: { color: Colors.onPrimary, fontWeight: '700' },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',

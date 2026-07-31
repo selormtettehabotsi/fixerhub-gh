@@ -37,4 +37,35 @@ public class WorkerClient {
             }
         });
     }
+
+    /**
+     * KYC GATE: is this worker approved to take jobs?
+     *
+     * Hiding unapproved workers from search isn't enough on its own — workerId
+     * is just a number in the request body, so without this check a client
+     * could still create a booking against an unvetted worker by guessing or
+     * by replaying an old id.
+     *
+     * NOT cached: unlike the userId mapping above, verification status changes
+     * (an admin approves, or revokes on a decline), and a stale "approved" is
+     * exactly the wrong thing to hold onto.
+     *
+     * Returns true when worker-service can't be reached, deliberately: a
+     * discovery blip shouldn't stop customers booking. The visibility filter is
+     * the primary control; this is defence in depth.
+     */
+    @SuppressWarnings("unchecked")
+    public boolean isApproved(Long workerId) {
+        if (workerId == null) return false;
+        try {
+            Map<String, Object> worker = loadBalancedRestTemplate.getForObject(
+                    "http://worker-service/workers/internal/" + workerId, Map.class);
+            if (worker == null) return false;
+            return "APPROVED".equals(String.valueOf(worker.get("verificationStatus")));
+        } catch (Exception e) {
+            log.warn("Could not check verification for worker {} — allowing the booking: {}",
+                    workerId, e.getMessage());
+            return true;
+        }
+    }
 }

@@ -1,0 +1,135 @@
+# PRODUCTION OVERLAY — use alongside the base file, never instead of it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d --build
+#
+# The base file stays exactly as it is for local development. Everything here
+# is what a box needs to survive being left alone for a week.
+#
+# WHY THE PUBLISHED PORTS AREN'T CHANGED HERE
+# Compose CONCATENATES list options like `ports` across files — an overlay can
+# add a mapping but cannot remove one. So 5432/6379/9092/8081-8087 stay
+# published on the host. On AWS that's acceptable because a security group
+# filters at the network interface and Docker's iptables rules cannot bypass
+# it: allow only 22, 80 and 443 and nothing else is reachable. On a host where
+# the firewall is host-side (Oracle, a plain VPS, UFW), Docker WILL punch
+# through it — there you must edit the base file to bind 127.0.0.1 instead.
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────────────────────
+  postgres:
+    restart: unless-stopped
+    # Gives dependents something real to wait for instead of racing Postgres.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 768m
+
+  redis:
+    restart: unless-stopped
+    mem_limit: 256m
+    # Cache only — evict rather than OOM when full.
+    command: ["redis-server", "--maxmemory", "192mb", "--maxmemory-policy", "allkeys-lru"]
+
+  zookeeper:
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+
+  kafka:
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      # Default is 1g heap; halved because nine JVMs share this box.
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      # Topic data is transient here — cap retention so a week of events can't
+      # quietly fill the disk.
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+
+  # ─── Application services ─────────────────────────────────────────────────
+  # MaxRAMPercentage (not -Xmx) so each JVM sizes its heap from the CONTAINER
+  # limit above, not the host's total RAM. Without this every service assumes
+  # it can have a quarter of the whole machine and nine of them thrash.
+  eureka-server:
+    restart: unless-stopped
+    mem_limit: 320m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+
+  api-gateway:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+
+  auth-service:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  worker-service:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  booking-service:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  payment-service:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  review-service:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  notification-service:
+    restart: unless-stopped
+    # Slightly larger: the Firebase Admin SDK pulls in gRPC/protobuf.
+    mem_limit: 640m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"
+
+  admin-service:
+    restart: unless-stopped
+    mem_limit: 448m
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k -XX:+ExitOnOutOfMemoryError"

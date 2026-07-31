@@ -83,13 +83,19 @@ export async function getUserPublic(userId: number | string): Promise<PublicUser
   return res.data;
 }
 
-/** TOKENS (H6): revoke the refresh token server-side on logout. */
+/** TOKENS (H6): revoke the refresh token server-side on logout.
+ *
+ *  Called in the background by `utils/signOut` — the user is already back on
+ *  the welcome screen by the time this resolves. The short timeout stops a
+ *  dead connection from leaving the request hanging for the client default
+ *  (15s) long after sign-out finished. */
 export async function logoutServer(refreshToken: string | null): Promise<void> {
   if (!refreshToken) return;
   try {
-    await client.post('/auth/logout', { refreshToken });
+    await client.post('/auth/logout', { refreshToken }, { timeout: 5000 });
   } catch {
-    // Best effort — local logout proceeds regardless.
+    // Best effort — the local session is already gone, and the refresh token
+    // expires on its own after 7 days.
   }
 }
 

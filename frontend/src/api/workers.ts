@@ -25,6 +25,10 @@ export interface Worker {
   /** SUBSCRIPTION: effective plan — "FREE" | "PRO" */
   plan?: string;
   planExpiresAt?: string;
+  /** KYC: only returned by the owner-scoped endpoints (/workers/by-user/{id}),
+   *  never on public listings. Drives the dashboard verification prompt. */
+  verificationStatus?: 'NONE' | 'PENDING' | 'APPROVED' | 'DECLINED' | 'RESUBMIT_REQUESTED';
+  verificationNote?: string;
 }
 
 export async function getNearbyWorkers(

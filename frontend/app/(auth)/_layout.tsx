@@ -4,6 +4,8 @@ export default function AuthLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="welcome" />
+      {/* Role choice sits between the carousel and the form */}
+      <Stack.Screen name="role" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
       <Stack.Screen name="forgot-password" />

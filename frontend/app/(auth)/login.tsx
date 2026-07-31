@@ -171,7 +171,9 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={() => router.replace('/(auth)/register')} style={styles.registerLink}>
+          {/* Straight to the role question — registering without choosing would
+              silently default everyone to CUSTOMER. */}
+          <TouchableOpacity onPress={() => router.replace('/(auth)/role')} style={styles.registerLink}>
             <Text style={styles.registerLinkText}>
               Don't have an account? <Text style={styles.registerLinkBold}>Register</Text>
             </Text>

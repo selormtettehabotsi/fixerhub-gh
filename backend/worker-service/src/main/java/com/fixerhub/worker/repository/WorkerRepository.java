@@ -16,6 +16,13 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
 
     List<Worker> findByVerificationStatus(VerificationStatus status);
 
+    /** PUBLIC LIST: only KYC-approved workers are discoverable by customers.
+     *  Filtered in the query rather than after paging — post-filtering a page
+     *  would return short/empty pages and a wrong total count. */
+    org.springframework.data.domain.Page<Worker> findByVerificationStatus(
+            VerificationStatus status, org.springframework.data.domain.Pageable pageable);
+
+
     @Query("SELECT w FROM Worker w WHERE w.available = true OR w.available IS NULL")
     List<Worker> findAllAvailableOrUnset();
 

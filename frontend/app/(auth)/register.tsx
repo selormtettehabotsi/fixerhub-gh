@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,7 +25,11 @@ type Role = 'CUSTOMER' | 'WORKER';
 
 export default function RegisterScreen() {
   const styles = useThemedStyles(makeStyles);
-  const [role, setRole] = useState<Role>('CUSTOMER');
+  // Role is chosen on the previous screen (/(auth)/role). Falling back to
+  // CUSTOMER covers arriving straight from the login screen's "Register" link;
+  // the "Change" action below sends them to the role screen either way.
+  const params = useLocalSearchParams<{ role?: string }>();
+  const [role, setRole] = useState<Role>(params.role === 'WORKER' ? 'WORKER' : 'CUSTOMER');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -112,30 +116,26 @@ export default function RegisterScreen() {
             </View>
           )}
 
-          <View style={styles.roleRow}>
-            {(['CUSTOMER', 'WORKER'] as Role[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleBtn, role === r && styles.roleBtnActive]}
-                onPress={() => setRole(r)}
-              >
-                <Ionicons
-                  name={r === 'CUSTOMER' ? 'person-outline' : 'construct-outline'}
-                  size={16}
-                  color={role === r ? Colors.onPrimary : Colors.onSurfaceVariant}
-                  style={styles.roleBtnIcon}
-                />
-                <Text style={[styles.roleBtnText, role === r && styles.roleBtnTextActive]}>
-                  {r === 'CUSTOMER' ? 'Customer' : 'Worker'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          {/* The role was picked on the previous screen, so this confirms the
+              answer rather than asking again — with a way back if it's wrong. */}
+          <View style={styles.roleChip}>
+            <Ionicons
+              name={role === 'CUSTOMER' ? 'home-outline' : 'construct-outline'}
+              size={16}
+              color={Colors.primary}
+            />
+            <Text style={styles.roleChipText}>
+              Signing up as <Text style={styles.roleChipRole}>{role === 'CUSTOMER' ? 'a Customer' : 'a Worker'}</Text>
+            </Text>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/role')} hitSlop={8}>
+              <Text style={styles.roleChipChange}>Change</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.form}>
             <InputField label="Full Name" value={name} onChangeText={setName} placeholder="Kwame Mensah" iconName="person-outline" />
             <InputField label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" iconName="mail-outline" keyboardType="email-address" autoCapitalize="none" />
-            <InputField label="Password" value={password} onChangeText={setPassword} placeholder="Minimum 6 characters" iconName="lock-closed-outline" secureTextEntry />
+            <InputField label="Password" value={password} onChangeText={setPassword} placeholder="8+ characters, including a number" iconName="lock-closed-outline" secureTextEntry />
             <InputField label="Phone" value={phone} onChangeText={setPhone} placeholder="+233241234567" iconName="call-outline" keyboardType="phone-pad" />
             <InputField label="Location" value={location} onChangeText={setLocation} placeholder="Accra, Ghana" iconName="location-outline" />
             <InputField label="Referral Code (optional)" value={referralCode} onChangeText={setReferralCode} placeholder="FH-XXXXXX" iconName="gift-outline" autoCapitalize="characters" />
@@ -227,21 +227,21 @@ const makeStyles = () => StyleSheet.create({
   subtitle: { fontSize: 17, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
   errorBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.errorContainer, borderRadius: 8, padding: 12, marginBottom: 16 },
   errorText: { color: Colors.error, fontSize: 16, fontFamily: 'Inter_400Regular', flex: 1 },
-  roleRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  roleBtn: {
-    flex: 1,
+  // Confirmation chip replacing the old CUSTOMER/WORKER toggle
+  roleChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryFixed,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceContainerHighest,
-    gap: 6,
+    marginBottom: 20,
   },
-  roleBtnActive: { backgroundColor: Colors.primary },
-  roleBtnIcon: {},
-  roleBtnText: { fontSize: 16, fontWeight: '600', color: Colors.onSurfaceVariant, fontFamily: 'Inter_600SemiBold' },
-  roleBtnTextActive: { color: Colors.onPrimary },
+  roleChipText: { flex: 1, fontSize: 14, color: Colors.onSurface, fontFamily: 'Inter_400Regular' },
+  roleChipRole: { fontFamily: 'Inter_600SemiBold', color: Colors.primary },
+  roleChipChange: { fontSize: 14, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
+
   form: { gap: 14 },
   inputGroup: { gap: 6 },
   label: { fontSize: 17, fontWeight: '600', color: Colors.onSurface, fontFamily: 'Inter_600SemiBold' },

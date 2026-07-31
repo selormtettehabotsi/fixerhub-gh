@@ -95,11 +95,9 @@ export default function CustomerProfile() {
   }
 
   async function handleLogout() {
-    // TOKENS (H6/M1): revoke the refresh token server-side, clear keychain + storage
-    const { logoutServer } = await import('../../src/api/auth');
-    const tokenStorage = await import('../../src/utils/tokenStorage');
-    await logoutServer(await tokenStorage.getItem('refreshToken'));
-    await tokenStorage.multiRemove(['token', 'refreshToken', 'role', 'userId', 'name', 'email', 'phone', 'profilePicture']);
+    // Local wipe first, server revocation in the background — see utils/signOut.
+    const { signOut } = await import('../../src/utils/signOut');
+    await signOut();
     router.replace('/(auth)/welcome');
   }
 
