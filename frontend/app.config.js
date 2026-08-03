@@ -19,6 +19,18 @@ module.exports = ({ config }) => {
     ],
     android: {
       ...config.android,
+      // FCM credential. google-services.json is a secret, so it's kept out of
+      // git — but EAS Build only uploads files git tracks, so the builder never
+      // got it and the APK shipped without push notifications.
+      //
+      // It's supplied as an EAS *file* environment variable: EAS writes the
+      // file onto the builder and exposes its path in GOOGLE_SERVICES_JSON.
+      // That expansion has to happen HERE, not in app.json — app.json is static
+      // JSON, so "$GOOGLE_SERVICES_JSON" is read as a literal filename and the
+      // build dies with ENOENT. Only a dynamic config can read process.env.
+      //
+      // Unset locally, so it falls back to the real file on disk.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? config.android?.googleServicesFile,
       config: { ...config.android?.config, googleMaps: { apiKey: mapsKey } },
     },
     ios: {

@@ -19,7 +19,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#a33900"
       },
-      "googleServicesFile": "$GOOGLE_SERVICES_JSON",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "MISSING_GOOGLE_MAPS_KEY"
