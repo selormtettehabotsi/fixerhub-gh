@@ -622,22 +622,31 @@ export default function BookingDetailScreen() {
         {isCompleted && userRole === 'WORKER' && isPaid && paymentData && (() => {
           const commPct = Math.round((paymentData.commissionRate ?? 0.05) * 100);
           const payoutSuccess = paymentData.payoutStatus === 'success';
+          // The heading answers "did the customer pay?" — which is what a
+          // worker opens this screen to find out, and by this point the answer
+          // is always yes (the card only renders when isPaid). It used to read
+          // "Payment Pending Payout" whenever the MoMo transfer hadn't settled,
+          // which workers read as "the customer hasn't paid me".
+          const payoutLabel: Record<string, string> = {
+            success:    'Sent to your MoMo',
+            processing: 'Being sent to your MoMo',
+            held:       'On hold pending a report',
+            failed:     'Transfer failed — support will retry',
+            cancelled:  'Cancelled (payment refunded)',
+          };
+          const payoutText = payoutLabel[paymentData.payoutStatus ?? ''] ?? 'Being sent to your MoMo';
           return (
             <View style={styles.workerPaymentCard}>
               <View style={styles.receiptHeader}>
-                <Ionicons
-                  name={payoutSuccess ? 'cash' : 'time-outline'}
-                  size={22}
-                  color={payoutSuccess ? Colors.available : Colors.warning}
-                />
-                <Text style={[styles.receiptTitle, { color: payoutSuccess ? Colors.available : Colors.warning }]}>
-                  {payoutSuccess ? 'Payment Received' : 'Payment Pending Payout'}
+                <Ionicons name="checkmark-circle" size={22} color={Colors.available} />
+                <Text style={[styles.receiptTitle, { color: Colors.available }]}>
+                  Customer Paid
                 </Text>
               </View>
 
               {!payoutSuccess && (
                 <Text style={styles.workerPaymentSub}>
-                  The customer has paid. Your earnings are being processed and will arrive on your MoMo shortly.
+                  The customer has paid in full. Your earnings are on the way.
                 </Text>
               )}
 
@@ -651,6 +660,10 @@ export default function BookingDetailScreen() {
                 value={`GH₵ ${(paymentData.workerAmount ?? 0).toFixed(2)}`}
                 bold
               />
+              {/* Payout is its own line now — a worker can see the customer
+                  paid AND where their transfer has got to, without the two
+                  being collapsed into one ambiguous heading. */}
+              <ReceiptRow label="Payout" value={payoutText} />
               {payoutSuccess && paymentData.payoutReference && (
                 <ReceiptRow label="Payout Ref" value={paymentData.payoutReference} mono />
               )}
