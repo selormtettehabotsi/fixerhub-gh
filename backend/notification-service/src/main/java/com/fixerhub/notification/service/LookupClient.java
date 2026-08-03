@@ -93,7 +93,9 @@ public class LookupClient {
                            String type, Long bookingId) {
         recordInbox(userId, title, body, type, bookingId);
         String token = fcmTokenForUser(userId);
-        if (token != null) push.sendPush(token, title, body);
+        // Pass type/bookingId through so a tapped push opens the same place the
+        // in-app inbox entry does.
+        if (token != null) push.sendPush(token, title, body, type, bookingId);
         else log.info("No FCM token for userId={} — push '{}' skipped (recorded in inbox)", userId, title);
     }
 

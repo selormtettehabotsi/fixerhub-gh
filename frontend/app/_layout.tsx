@@ -6,11 +6,31 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { UnreadProvider } from '../src/context/UnreadContext';
 import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 import { Colors } from '../src/constants/colors';
 
 SplashScreen.preventAutoHideAsync();
+
+// PUSH: show notifications that arrive while the app is OPEN.
+//
+// Android hands a foreground notification to the app instead of the system
+// tray, and expo-notifications drops it unless a handler says otherwise — so
+// pushes appeared to "not work" when they had actually been delivered. That's
+// the case that matters most here: a worker with the app open is exactly who
+// needs to see a new booking land.
+//
+// Set at module scope, not in a component, so it's registered before any
+// notification can arrive.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,   // also keep it in the tray/shade
+    shouldPlaySound: true,
+    shouldSetBadge: false,  // badge counts come from the in-app inbox instead
+  }),
+});
 
 // Custom back button — just the chevron, no text label
 function BackButton() {
@@ -36,6 +56,23 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  // PUSH: tapping a notification opens the thing it's about. The backend
+  // already sends bookingId in the data payload (LookupClient.recordInbox),
+  // so a booking push deep-links to that booking; anything else falls back to
+  // the notification centre.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as { bookingId?: string | number };
+      const bookingId = data?.bookingId;
+      if (bookingId) {
+        router.push({ pathname: '/booking/[id]', params: { id: String(bookingId) } });
+      } else {
+        router.push('/notifications');
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   if (!fontsLoaded) return null;
 
