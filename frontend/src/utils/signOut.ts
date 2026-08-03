@@ -1,5 +1,6 @@
 import { logoutServer } from '../api/auth';
 import * as tokenStorage from './tokenStorage';
+import { clearAllChatCaches } from './chatCache';
 
 /**
  * SIGN OUT — local first, server revocation in the background.
@@ -47,6 +48,11 @@ export async function signOut(): Promise<void> {
   }
 
   await tokenStorage.multiRemove(SESSION_KEYS);
+
+  // Cached conversations are kept on the device for offline reading, so they
+  // must go too — otherwise the next person to sign in on this phone could
+  // open a chat and read the previous user's messages.
+  await clearAllChatCaches();
 
   // Fire-and-forget. logoutServer already swallows its own errors; the void
   // and the catch are here so an unhandled rejection can't surface as a

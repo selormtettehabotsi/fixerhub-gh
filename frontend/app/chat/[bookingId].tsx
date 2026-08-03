@@ -23,6 +23,7 @@ import { Audio } from 'expo-av';
 import client, { getFreshAccessToken } from '../../src/api/client';
 import { getUserPublic } from '../../src/api/auth';
 import { markConversationRead } from '../../src/utils/chatUnread';
+import { loadCachedMessages, saveCachedMessages } from '../../src/utils/chatCache';
 import { useUnread } from '../../src/context/UnreadContext';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
 import { Colors } from '../../src/constants/colors';
@@ -131,17 +132,62 @@ export default function ChatScreen() {
       });
   }, [roomId]);
 
-  // Reload history every time this screen comes into focus (handles back-navigation)
+  // Re-sync history when the screen regains focus.
+  //
+  // Deliberately SILENT after the first load: it used to flip historyLoading on
+  // every focus and replace the whole array, so returning to a chat flashed a
+  // spinner and rebuilt the list — it felt like a page reload rather than a
+  // conversation. Now the spinner only appears when there's genuinely nothing
+  // on screen yet, and the fetched messages are merged into what's already
+  // there, so the list doesn't jump.
+  const hasLoadedRef = useRef(false);
+
+  // OFFLINE: paint the cached conversation immediately, before any request.
+  // With no signal this is the whole screen; with signal it's replaced a moment
+  // later by the server's copy. Either way the chat is never blank.
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+    loadCachedMessages<ChatMessage>(roomId).then((cached) => {
+      if (cancelled || cached.length === 0) return;
+      setMessages((prev) => (prev.length > 0 ? prev : cached));
+      hasLoadedRef.current = true;   // suppress the spinner — we have something to show
+      setHistoryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [roomId]);
+
   const fetchHistory = useCallback(async () => {
     if (!roomId) {
       setHistoryLoading(false);
       return;
     }
-    setHistoryLoading(true);
+    if (!hasLoadedRef.current) setHistoryLoading(true);
     try {
       const res = await client.get<ChatMessage[]>(`/chat/room/${roomId}/history`);
       const sorted = [...(res.data ?? [])].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-      setMessages(sorted);
+      hasLoadedRef.current = true;
+      // Merge, don't replace: keeps optimistic messages that are still sending
+      // and anything the WebSocket delivered while this request was in flight.
+      setMessages((prev) => {
+        if (prev.length === 0) return sorted;
+        const fetchedIds = new Set(sorted.map((m) => m.id).filter((id) => id != null));
+        const pending = prev.filter((m) => {
+          if (m.id != null) return !fetchedIds.has(m.id);
+          // Optimistic messages carry NO id until the server persists them, so
+          // an id check alone would keep showing the local copy alongside the
+          // saved one. Match on sender + content + a loose time window instead.
+          return !sorted.some(
+            (s) =>
+              s.senderId === m.senderId &&
+              s.text === m.text &&
+              s.audioUrl === m.audioUrl &&
+              Math.abs((s.timestamp ?? 0) - (m.timestamp ?? 0)) < 60_000,
+          );
+        });
+        const merged = [...sorted, ...pending].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        return merged;
+      });
       // UNREAD BADGES: opening the chat clears its badge — instantly on the tab too
       markConversationRead(roomId).then(refreshUnread);
       markServerRead();   // READ RECEIPTS
@@ -154,7 +200,11 @@ export default function ChatScreen() {
         }
       }
     } catch {
-      setMessages([]);
+      // Do NOT clear the messages here. This used to `setMessages([])`, so a
+      // dropped request — switching from wifi to data, a moment of no signal —
+      // emptied a conversation the user could see a second earlier. Keeping
+      // the stale list is always better than showing an empty chat.
+      if (!hasLoadedRef.current) setMessages([]);
     } finally {
       setHistoryLoading(false);
     }
@@ -239,6 +289,15 @@ export default function ChatScreen() {
       stompRef.current?.deactivate();
     };
   }, [roomId]);
+
+  // OFFLINE: keep the device copy in step with what's on screen. Covers every
+  // source — history sync, live WebSocket messages and optimistic sends — so
+  // reopening the chat without a connection shows the conversation as it was.
+  useEffect(() => {
+    if (!roomId || messages.length === 0) return;
+    const t = setTimeout(() => { saveCachedMessages(roomId, messages); }, 400);
+    return () => clearTimeout(t);   // debounced: a burst of messages writes once
+  }, [roomId, messages]);
 
   useEffect(() => {
     if (messages.length > 0) {
