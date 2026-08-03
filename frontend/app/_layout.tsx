@@ -64,7 +64,21 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, headerBackTitle: '' }}>
+      {/* contentStyle matters: without it every screen sits on react-navigation's
+          DEFAULT WHITE background. You don't see it while a screen is settled
+          (each one paints its own SafeAreaView), but during a back gesture or
+          pop animation the outgoing screen slides off before the incoming one
+          paints — and the white default flashes through. Painfully obvious on
+          the dark theme, and it reads as "the screen went blank".
+          Colors is the mutable theme object, so this repaints on theme switch
+          along with everything else (the `version` counter re-renders us). */}
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          headerBackTitle: '',
+          contentStyle: { backgroundColor: Colors.surface },
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(customer)" />

@@ -13,6 +13,10 @@ export default function WorkerLayout() {
           headerShown: false,
           tabBarActiveTintColor: Colors.primary,
           tabBarInactiveTintColor: Colors.outline,
+          // Without this the tab scenes sit on react-navigation's default
+          // white, which flashes through while returning from a pushed screen
+          // (e.g. back from /notifications) before the tab repaints.
+          sceneStyle: { backgroundColor: Colors.surface },
         }}
       >
         <Tabs.Screen
