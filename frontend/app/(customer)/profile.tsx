@@ -12,6 +12,7 @@ import { formatUserId } from '../../src/utils/formatId';
 import { deleteAccount, getVerificationStatus, VerificationStatus, VerifyChannel } from '../../src/api/auth';
 import VerifyOtpModal from '../../src/components/VerifyOtpModal';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
+import { currentUpdateLabel } from '../../src/utils/updates';
 import ThemeSelector from '../../src/components/ThemeSelector';
 import EditProfileModal from '../../src/components/EditProfileModal';
 import ChangePasswordModal from '../../src/components/ChangePasswordModal';
@@ -181,6 +182,12 @@ export default function CustomerProfile() {
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
           <Text style={styles.deleteBtnText}>Delete Account</Text>
         </TouchableOpacity>
+
+        {/* BUILD LABEL — which JS bundle is actually running. Small and grey on
+            purpose: it means nothing to a customer, but it's the only way to
+            tell "the OTA landed" from "the app is still on the APK's bundle"
+            without plugging the phone into a computer. */}
+        <Text style={styles.buildLabel}>{currentUpdateLabel()}</Text>
       </ScrollView>
 
       {/* ── Edit profile modal ────────────────────────────────────────── */}
@@ -322,6 +329,14 @@ const makeStyles = () => StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   menuLabel: { flex: 1, fontSize: 16, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
   menuDivider: { height: 1, backgroundColor: Colors.surfaceContainerHigh, marginLeft: 50 },
+  buildLabel: {
+    fontSize: 11,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 4,
+    fontFamily: 'Inter_400Regular',
+  },
   logoutBtn: { marginHorizontal: 20, borderRadius: 12, backgroundColor: Colors.errorContainer, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   logoutText: { color: Colors.error, fontSize: 16, fontWeight: '700', fontFamily: 'PlusJakartaSans_700Bold' },
   deleteBtn: { marginHorizontal: 20, marginTop: 12, marginBottom: 40, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },

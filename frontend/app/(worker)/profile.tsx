@@ -26,6 +26,7 @@ import client from '../../src/api/client';
 import type { VerificationStatus } from '../../src/api/admin';
 import { formatWorkerId } from '../../src/utils/formatId';
 import { cloudinaryThumb } from '../../src/utils/imageUrl';
+import { currentUpdateLabel } from '../../src/utils/updates';
 import ThemeSelector from '../../src/components/ThemeSelector';
 import EditProfileModal from '../../src/components/EditProfileModal';
 import ChangePasswordModal from '../../src/components/ChangePasswordModal';
@@ -604,6 +605,10 @@ export default function WorkerProfileScreen() {
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
           <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
         </TouchableOpacity>
+
+        {/* BUILD LABEL — see the customer profile: tells an OTA update apart
+            from the bundle baked into the APK, without needing adb. */}
+        <Text style={styles.buildLabel}>{currentUpdateLabel()}</Text>
       </ScrollView>
 
       {/* Edit profile modal */}
@@ -869,6 +874,14 @@ const makeStyles = () => StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
   menuLabel: { flex: 1, fontSize: 15, color: Colors.onSurface, fontFamily: 'Inter_400Regular' },
 
+  buildLabel: {
+    fontSize: 11,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 4,
+    fontFamily: 'Inter_400Regular',
+  },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginBottom: 12, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.error },
   logoutText: { fontSize: 15, color: Colors.error, fontFamily: 'Inter_600SemiBold' },
 
