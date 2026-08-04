@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import { UnreadProvider } from '../src/context/UnreadContext';
 import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 import { Colors } from '../src/constants/colors';
+import { useAutoUpdate } from '../src/utils/updates';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,6 +43,10 @@ function BackButton() {
 }
 
 export default function RootLayout() {
+  // OTA: check on every launch and apply straight away, instead of waiting for
+  // the next cold start. No-op in development and in Expo Go.
+  useAutoUpdate();
+
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
     PlusJakartaSans_600SemiBold,
