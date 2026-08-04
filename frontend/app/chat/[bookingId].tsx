@@ -540,14 +540,25 @@ export default function ChatScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
-      {/* KEYBOARD FIX (Android): the Android window already resizes when the
-          keyboard opens (softwareKeyboardLayoutMode "resize"), so adding
-          KeyboardAvoidingView's own 'height' compensation on top of it
-          double-shifted the layout and made the input sink off-screen when
-          tapped. Passing `undefined` on Android lets the OS handle it; iOS
-          still needs explicit padding. */}
+      {/* KEYBOARD — 'padding' on BOTH platforms.
+          The manifest does say adjustResize, and on older Android that shrank
+          the window on its own, which is why this used to pass `undefined`
+          here (adding compensation on top of a resize double-shifted the
+          layout). That stopped being true: apps targeting Android 15 are
+          edge-to-edge, the window no longer shrinks, and `undefined` means the
+          input simply sits under the keyboard.
+
+          'padding' is the safe choice in BOTH worlds rather than a version
+          check, because KeyboardAvoidingView computes the actual overlap
+          between its own measured frame and the top of the keyboard. If the
+          window did resize, its frame already ends above the keyboard, the
+          overlap is zero, and it adds nothing — no double shift. If it didn't,
+          it pads by exactly the amount covered. Self-correcting either way.
+
+          The iOS offset stays measured (headerHeight); Android needs none,
+          because this view's frame already starts below the header. */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
