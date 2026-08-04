@@ -8,13 +8,14 @@ import {
   FlatList,
   TouchableOpacity,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Image,
   Linking,
   Alert,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect, Stack, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,6 +59,22 @@ export default function ChatScreen() {
   const styles = useThemedStyles(makeStyles);
   // Custom header draws under the status bar, so pad by the top inset.
   const insets = useSafeAreaInsets();
+  // Measured header height — feeds the iOS keyboard offset instead of a magic number.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  // Whether the keyboard is currently up. Used to drop the bottom safe-area
+  // padding: while the keyboard is showing it covers the nav/gesture bar, so
+  // reserving space for it just leaves a gap under the input.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+
+  useEffect(() => {
+    // 'DidShow' on Android (the window has already resized by then) and
+    // 'WillShow' on iOS so the padding changes in step with the animation.
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, () => setKeyboardUp(true));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   // The route param is named bookingId for URL compat, but now holds the conversationId
   // e.g. "/chat/c1_w2" → bookingId = "c1_w2"
   const { bookingId: roomId, otherName: otherNameParam } = useLocalSearchParams<{ bookingId: string; otherName?: string }>();
@@ -475,7 +492,12 @@ export default function ChatScreen() {
   const showMic = inputText.trim().length === 0 && connected && !!userId;
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    // NOTE: no edges={['bottom']} here on purpose. SafeAreaView pads for the
+    // nav bar permanently, and that padding does NOT go away when the keyboard
+    // opens — so the input sat floating above the keyboard with a dead strip
+    // underneath. The bottom inset is applied to the input row instead, where
+    // it can be dropped while the keyboard covers the nav bar anyway.
+    <View style={styles.container}>
       {/* CHAT HEADER — rendered by us, not by the navigator.
           The native-stack header lays its title out natively and ignores flex
           hints, so a long name kept growing the title block and pushing the
@@ -483,7 +505,13 @@ export default function ChatScreen() {
           back + avatar + call are FIXED width, and the name takes whatever is
           left (flexShrink) and ellipsizes with "…" when it doesn't fit. */}
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <View
+        style={[styles.header, { paddingTop: insets.top + 6 }]}
+        // Measured, not guessed: iOS needs the height of everything above the
+        // KeyboardAvoidingView as its offset. This used to be a hardcoded 90,
+        // which is wrong on any device whose status bar or header differs.
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+      >
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBackBtn} hitSlop={8}>
           <Ionicons name="chevron-back" size={26} color="#ffffff" />
         </TouchableOpacity>
@@ -521,7 +549,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         {historyLoading ? (
           <View style={styles.center}>
@@ -553,7 +581,15 @@ export default function ChatScreen() {
           </View>
         )}
 
-        <View style={styles.inputRow}>
+        {/* Bottom padding is dynamic, not fixed: it reserves the safe-area
+            inset only while the keyboard is down. With the keyboard up the
+            input sits directly on top of it. */}
+        <View
+          style={[
+            styles.inputRow,
+            { paddingBottom: keyboardUp ? 10 : insets.bottom + 10 },
+          ]}
+        >
           {recording ? (
             // VOICE MESSAGES: recording state — cancel / timer / send
             <>
@@ -603,7 +639,7 @@ export default function ChatScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -704,10 +740,7 @@ const makeStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 12,
-    // UX: the SafeAreaView (edges=['bottom']) already pads past the Android
-    // nav/gesture zone, so the input only needs a small breathing gap on top of
-    // that — a big value here double-padded it and floated it too high.
-    paddingBottom: Platform.OS === 'android' ? 10 : 12,
+    // paddingBottom is set inline (keyboard-aware) — see the inputRow JSX.
     paddingTop: 12,
     gap: 10,
     backgroundColor: Colors.surface,
