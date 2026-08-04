@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useThemedStyles } from '../context/ThemeContext';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, UrlTile, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { Client } from '@stomp/stompjs';
 import { Colors } from '../constants/colors';
@@ -9,7 +9,31 @@ import { getFreshAccessToken } from '../api/client';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
 const WS_URL = BASE_URL.replace(/^http/, 'ws') + '/ws/websocket';
-const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+/**
+ * BASE MAP — OpenStreetMap raster tiles instead of Google's.
+ *
+ * Google's Maps SDK renders nothing but grey unless the Cloud project has an
+ * active billing account, which needs a card on file. The SDK itself works
+ * (it initialises, and the Google watermark appears) — only the tile layer is
+ * withheld. So we keep the same MapView, set mapType="none" to switch Google's
+ * base layer off, and draw OSM tiles into it ourselves. Markers, polylines and
+ * fitToCoordinates all keep working, because those are drawn by the SDK, not
+ * fetched from Google.
+ *
+ * Trade-off worth remembering: OSM's public tile servers are donation-funded
+ * and their usage policy rules out heavy commercial traffic. This is fine for
+ * testing and early users; before a real launch, move to a paid tile host
+ * (or Google, once billing exists) by changing this one URL.
+ */
+const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+/**
+ * ROUTING — OSRM's public demo server, which needs no key and no billing.
+ * Same job as the Directions API: a road-following geometry plus a duration.
+ * It returns an encoded polyline in the same format Google uses, so
+ * decodePolyline works unchanged.
+ */
+const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving';
 
 interface WorkerPosition {
   latitude: number;
@@ -80,8 +104,8 @@ interface RouteInfo {
 /**
  * LIVE TRACKING (customer side): subscribes to /topic/booking/{id}/location
  * and shows the worker moving on a map. The route line follows real roads via
- * the Google Directions API (with a straight-line fallback), and the ETA comes
- * from Google's driving-time estimate when available.
+ * OSRM (with a straight-line fallback), and the ETA comes from OSRM's
+ * driving-time estimate when available.
  */
 export default function LiveTrackingMap({ bookingId, workerName, customerLat, customerLng }: Props) {
   const styles = useThemedStyles(makeStyles);
@@ -129,9 +153,9 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
 
   // ROAD ROUTING: (re)fetch the driving route when the worker first appears or
   // has moved >150 m from where the current route started. Falls back silently
-  // to the straight line if the Directions API is unavailable.
+  // to the straight line if the routing service is unavailable.
   useEffect(() => {
-    if (!worker || customerLat == null || customerLng == null || !MAPS_KEY) return;
+    if (!worker || customerLat == null || customerLng == null) return;
     const movedKm = route
       ? haversineKm(worker.latitude, worker.longitude, route.origin.latitude, route.origin.longitude)
       : Infinity;
@@ -141,20 +165,20 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
     const origin: LatLng = { latitude: worker.latitude, longitude: worker.longitude };
     (async () => {
       try {
+        // OSRM takes lng,lat (GeoJSON order) — the reverse of Google's.
         const url =
-          `https://maps.googleapis.com/maps/api/directions/json` +
-          `?origin=${origin.latitude},${origin.longitude}` +
-          `&destination=${customerLat},${customerLng}` +
-          `&mode=driving&key=${MAPS_KEY}`;
+          `${OSRM_URL}/` +
+          `${origin.longitude},${origin.latitude};${customerLng},${customerLat}` +
+          `?overview=full&geometries=polyline`;
         const res = await fetch(url);
         const data = await res.json();
         const r = data?.routes?.[0];
-        const leg = r?.legs?.[0];
-        if (r?.overview_polyline?.points && leg) {
+        // distance is in metres and duration in seconds, same units as Google.
+        if (r?.geometry && typeof r.distance === 'number') {
           setRoute({
-            coords: decodePolyline(r.overview_polyline.points),
-            distanceKm: (leg.distance?.value ?? 0) / 1000,
-            durationMin: Math.max(1, Math.round((leg.duration?.value ?? 60) / 60)),
+            coords: decodePolyline(r.geometry),
+            distanceKm: r.distance / 1000,
+            durationMin: Math.max(1, Math.round((r.duration ?? 60) / 60)),
             origin,
           });
         }
@@ -208,6 +232,10 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        // "none" turns off the provider's own base layer so the UrlTile below
+        // is what you actually see. Without it OSM would be drawn on top of
+        // (or under) Google's, which is both wrong and a licensing problem.
+        mapType="none"
         style={styles.map}
         initialRegion={{
           latitude: worker?.latitude ?? customerLat ?? 5.6037,
@@ -216,6 +244,10 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
           longitudeDelta: 0.05,
         }}
       >
+        {/* Must be the first child: tiles render in declaration order, so a
+            later UrlTile would paint over the markers and the route line. */}
+        <UrlTile urlTemplate={OSM_TILE_URL} maximumZ={19} flipY={false} zIndex={-1} />
+
         {worker && (
           <Marker
             coordinate={{ latitude: worker.latitude, longitude: worker.longitude }}
@@ -236,7 +268,7 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
           </Marker>
         )}
         {route?.coords?.length ? (
-          // Real road-following route from the Directions API
+          // Real road-following route from OSRM
           <Polyline coordinates={route.coords} strokeColor={Colors.primary} strokeWidth={4} />
         ) : hasEndpoints ? (
           // Fallback while the route loads (or if Directions is unavailable)
@@ -251,11 +283,25 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
           />
         ) : null}
       </MapView>
+
+      {/* Required by OpenStreetMap's licence whenever their tiles are shown. */}
+      <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
     </View>
   );
 }
 
 const makeStyles = () => StyleSheet.create({
+  attribution: {
+    position: 'absolute',
+    right: 6,
+    bottom: 4,
+    fontSize: 9,
+    color: Colors.onSurfaceVariant,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 4,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
   card: {
     borderRadius: 14,
     overflow: 'hidden',
