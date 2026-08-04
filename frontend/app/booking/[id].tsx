@@ -21,6 +21,8 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { Colors } from '../../src/constants/colors';
+import { statusLabel } from '../../src/utils/bookingStatus';
+import { Video, ResizeMode } from 'expo-av';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -43,14 +45,6 @@ import { useLocation } from '../../src/hooks/useLocation';
 const HIDDEN_KEY = 'hiddenBookingIds';
 
 const STATUSES = ['PENDING', 'ACCEPTED', 'WORKER_ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED'];
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: 'Pending',
-  ACCEPTED: 'Accepted',
-  WORKER_ON_THE_WAY: 'On the Way',
-  IN_PROGRESS: 'In Progress',
-  COMPLETED: 'Completed',
-};
-
 const STATUS_COLORS: Record<string, string> = {
   PENDING: Colors.warning,
   ACCEPTED: Colors.secondary,
@@ -349,7 +343,7 @@ export default function BookingDetailScreen() {
             )}
           </View>
           <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[booking.status] ?? Colors.outline }]}>
-            <Text style={styles.statusText}>{STATUS_LABELS[booking.status] ?? booking.status}</Text>
+            <Text style={styles.statusText}>{statusLabel(booking.status)}</Text>
           </View>
         </View>
 
@@ -371,7 +365,7 @@ export default function BookingDetailScreen() {
                         )}
                       </View>
                       <Text style={[styles.stepLabel, isActive ? styles.stepLabelActive : styles.stepLabelInactive]} numberOfLines={2}>
-                        {STATUS_LABELS[status]}
+                        {statusLabel(status)}
                       </Text>
                     </View>
                     {!isLast && (
@@ -747,8 +741,13 @@ export default function BookingDetailScreen() {
             <TouchableOpacity style={styles.photoCloseBtn} onPress={() => setShowPhoto(false)}>
               <Ionicons name="close-circle" size={36} color="#fff" />
             </TouchableOpacity>
+            {/* Every item used to be rendered with <Image>, so a video opened
+                as a black rectangle with no way to play it. MediaSlide picks
+                the right element per item, and only the visible video is
+                mounted-and-playing — otherwise swiping through several clips
+                leaves them all running at once, audio included. */}
             {allBookingMedia.length === 1 ? (
-              <Image source={{ uri: allBookingMedia[0] }} style={styles.photoFull} resizeMode="contain" />
+              <MediaSlide uri={allBookingMedia[0]} width={SCREEN_WIDTH} active />
             ) : (
               <>
                 <FlatList
@@ -761,21 +760,55 @@ export default function BookingDetailScreen() {
                     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
                     setPhotoIndex(idx);
                   }}
-                  renderItem={({ item }) => (
-                    <Image source={{ uri: item }} style={[styles.photoFull, { width: SCREEN_WIDTH }]} resizeMode="contain" />
+                  renderItem={({ item, index }) => (
+                    <MediaSlide uri={item} width={SCREEN_WIDTH} active={index === photoIndex} />
                   )}
                 />
+                {/* Dots alone stop being legible past ~5 items, so pair them
+                    with a plain count. */}
                 <View style={styles.photoDots}>
                   {allBookingMedia.map((_, i) => (
                     <View key={i} style={[styles.photoDot, i === photoIndex && styles.photoDotActive]} />
                   ))}
                 </View>
+                <Text style={styles.photoCounter}>
+                  {photoIndex + 1} of {allBookingMedia.length}
+                </Text>
               </>
             )}
           </View>
         </Modal>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/**
+ * One page of the full-screen media viewer: an image, or a video with the
+ * platform's own playback controls.
+ *
+ * `active` is what keeps a gallery of clips sane — a video that isn't the page
+ * you're looking at is paused, so swiping past three videos doesn't leave three
+ * soundtracks playing over each other.
+ */
+function MediaSlide({ uri, width, active }: { uri: string; width: number; active: boolean }) {
+  const styles = useThemedStyles(makeStyles);
+
+  if (!isVideoUrl(uri)) {
+    return <Image source={{ uri }} style={[styles.photoFull, { width }]} resizeMode="contain" />;
+  }
+
+  return (
+    <View style={[styles.photoFull, { width }]}>
+      <Video
+        source={{ uri }}
+        style={styles.videoFull}
+        resizeMode={ResizeMode.CONTAIN}
+        useNativeControls
+        isLooping={false}
+        shouldPlay={active}
+      />
+    </View>
   );
 }
 
@@ -888,6 +921,9 @@ const makeStyles = () => StyleSheet.create({
   photoModal:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
   photoFull:       { width: SCREEN_WIDTH, height: '70%' },
   photoCloseBtn:   { position: 'absolute', top: 50, right: 20, zIndex: 10 },
+  // Videos fill the same slot as images; the wrapper keeps the slide sized.
+  videoFull:       { width: '100%', height: '100%', backgroundColor: '#000' },
+  photoCounter:    { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 8, fontFamily: 'Inter_400Regular' },
   photoDots:       { flexDirection: 'row', gap: 6, marginTop: 16 },
   photoDot:        { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)' },
   photoDotActive:  { backgroundColor: '#fff', width: 18 },

@@ -26,6 +26,7 @@ import { cloudinaryThumb } from '../../src/utils/imageUrl';
 
 const HIDDEN_KEY = 'hiddenBookingIds';
 import { formatWorkerId } from '../../src/utils/formatId';
+import { statusLabel } from '../../src/utils/bookingStatus';
 import RatingPromptModal from '../../src/components/RatingPromptModal';
 import { useTabBar } from '../../src/context/TabBarContext';
 
@@ -222,7 +223,7 @@ export default function BookingsScreen() {
                 <Text style={styles.bookingNumLabel}>Booking #{item.bookingNumber ?? index + 1}</Text>
               </View>
               <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] ?? Colors.outline }]}>
-                <Text style={styles.statusText}>{item.status}</Text>
+                <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
               </View>
             </View>
 

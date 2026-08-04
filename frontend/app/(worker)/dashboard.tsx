@@ -17,6 +17,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { statusLabel } from '../../src/utils/bookingStatus';
 import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,14 +43,6 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: Colors.unavailable,
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: 'Pending',
-  ACCEPTED: 'Accepted',
-  WORKER_ON_THE_WAY: 'On the Way',
-  IN_PROGRESS: 'In Progress',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-};
 
 function getNextActions(status: string): { label: string; icon: string; nextStatus: string; color: string }[] {
   switch (status) {
@@ -338,7 +331,7 @@ export default function WorkerDashboard() {
                   <Text style={styles.bookingIdLabel}>Booking {formatBookingId(item.id)}</Text>
                 </View>
                 <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] ?? Colors.outline }]}>
-                  <Text style={styles.statusText}>{STATUS_LABELS[item.status] ?? item.status}</Text>
+                  <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
                 </View>
               </View>
               <Text style={styles.jobDetail}>Customer {formatUserId(item.customerId)}</Text>
