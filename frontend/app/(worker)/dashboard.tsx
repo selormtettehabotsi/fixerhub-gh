@@ -14,10 +14,9 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -100,6 +99,10 @@ export default function WorkerDashboard() {
     if (!workerId || isFallback || gpsLat == null || gpsLng == null) return;
     updateWorkerLocation(workerId, gpsLat, gpsLng).catch(() => {});
   }, [workerId, gpsLat, gpsLng, isFallback]);
+
+  // Bottom sheets need the nav-bar inset: without it the submit button sits
+  // underneath the system navigation and is awkward or impossible to tap.
+  const insets = useSafeAreaInsets();
 
   const [quoteBooking, setQuoteBooking] = useState<Booking | null>(null);
   const [quoteAmount, setQuoteAmount] = useState('');
@@ -421,8 +424,12 @@ export default function WorkerDashboard() {
       </Modal>
 
       <Modal visible={!!quoteBooking} animationType="slide" transparent onRequestClose={() => setQuoteBooking(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+        {/* 'padding' on Android too: the window no longer shrinks for the
+            keyboard under Android 15's edge-to-edge, so `undefined` let the
+            keyboard slide straight over this sheet — squashing the title,
+            price field and submit button into each other. */}
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 24 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Send a Quote</Text>
               <TouchableOpacity onPress={() => setQuoteBooking(null)}>
@@ -464,8 +471,12 @@ export default function WorkerDashboard() {
       {/* AGREED PRICE: confirm the final amount before completing → this is what
           the customer is charged on Paystack. */}
       <Modal visible={!!completeBooking} animationType="slide" transparent onRequestClose={() => setCompleteBooking(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+        {/* 'padding' on Android too: the window no longer shrinks for the
+            keyboard under Android 15's edge-to-edge, so `undefined` let the
+            keyboard slide straight over this sheet — squashing the title,
+            price field and submit button into each other. */}
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 24 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Confirm Final Price</Text>
               <TouchableOpacity onPress={() => setCompleteBooking(null)}>

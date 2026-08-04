@@ -235,8 +235,18 @@ export default function ConfirmBookingScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      {/* 'padding' on Android too — apps targeting Android 15 are edge-to-edge,
+          so the window no longer shrinks for the keyboard and `undefined` left
+          the description box hidden behind it. See the chat screen for the
+          longer explanation of why padding is safe on both platforms. */}
+      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          // Scrolls the focused field into view instead of leaving the user to
+          // do it — the description box is the last field on a long form.
+          automaticallyAdjustKeyboardInsets
+        >
           <View style={styles.workerSummary}>
             {workerPicture ? (
               <Image source={{ uri: cloudinaryThumb(workerPicture, 64) }} style={styles.workerAvatarImg} />
@@ -272,30 +282,38 @@ export default function ConfirmBookingScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Budget Range (GH₵)</Text>
+              {/* Each box is only half the row wide, so "Min e.g. 100" was
+                  being clipped — and the cash icon ate the space that was left,
+                  on the min field only, which also made the two look uneven.
+                  The GH₵ prefix replaces both: it's shorter than the icon, it
+                  appears on both fields, and it says what the number means,
+                  which the icon never did. */}
               <View style={styles.rangeRow}>
                 <View style={[styles.inputWrapper, styles.rangeInput]}>
-                  <Ionicons name="cash-outline" size={18} color={Colors.outline} style={styles.inputIcon} />
+                  <Text style={styles.currencyPrefix}>GH₵</Text>
                   <TextInput
                     style={styles.input}
                     value={minAmount}
                     onChangeText={setMinAmount}
-                    placeholder="Min e.g. 100"
+                    placeholder="Min"
                     placeholderTextColor={Colors.outline}
                     keyboardType="numeric"
                   />
                 </View>
                 <Text style={styles.rangeSep}>–</Text>
                 <View style={[styles.inputWrapper, styles.rangeInput]}>
+                  <Text style={styles.currencyPrefix}>GH₵</Text>
                   <TextInput
                     style={styles.input}
                     value={maxAmount}
                     onChangeText={setMaxAmount}
-                    placeholder="Max e.g. 300"
+                    placeholder="Max"
                     placeholderTextColor={Colors.outline}
                     keyboardType="numeric"
                   />
                 </View>
               </View>
+              <Text style={styles.rangeExample}>For example: 100 – 300</Text>
               {minAmount && maxAmount && Number(minAmount) > 0 && Number(maxAmount) >= Number(minAmount) && (
                 <Text style={styles.rangeHint}>Budget: GH₵ {minAmount} – GH₵ {maxAmount}</Text>
               )}
@@ -657,6 +675,18 @@ const makeStyles = () => StyleSheet.create({
   },
   rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rangeInput: { flex: 1 },
+  currencyPrefix: {
+    fontSize: 15,
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_500Medium',
+    marginRight: 6,
+  },
+  rangeExample: {
+    fontSize: 12,
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 6,
+  },
   rangeSep: { fontSize: 18, color: Colors.onSurfaceVariant, fontWeight: '600' },
   rangeHint: { fontSize: 13, color: Colors.primary, fontFamily: 'Inter_500Medium', marginTop: 4 },
   pricingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: Colors.surfaceContainerHigh, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8 },

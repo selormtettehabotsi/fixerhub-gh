@@ -1,7 +1,7 @@
 import React from 'react';
 import { useThemedStyles } from '../../src/context/ThemeContext';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/colors';
@@ -19,6 +19,15 @@ const CATEGORIES: { iconName: React.ComponentProps<typeof Ionicons>['name']; lab
 
 export default function CategoriesScreen() {
   const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+
+  // The tab bar FLOATS over the content, so the list has to end above it or the
+  // last row of cards scrolls underneath and can't be tapped. 65 is the pill's
+  // height, the inset is the system nav bar it sits on top of, and the rest is
+  // breathing room. Computed rather than a constant so it stays right when the
+  // user switches between gesture and 3-button navigation.
+  const listBottomPad = insets.bottom + 65 + 24;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -29,7 +38,7 @@ export default function CategoriesScreen() {
         data={CATEGORIES}
         numColumns={2}
         keyExtractor={(item) => item.skill}
-        contentContainerStyle={styles.grid}
+        contentContainerStyle={[styles.grid, { paddingBottom: listBottomPad }]}
         columnWrapperStyle={styles.row}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -54,7 +63,8 @@ const makeStyles = () => StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   title: { fontSize: 24, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 4 },
   subtitle: { fontSize: 16, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular' },
-  grid: { paddingHorizontal: 16, paddingBottom: 24 },
+  // paddingBottom is applied inline — it depends on the safe-area inset.
+  grid: { paddingHorizontal: 16 },
   row: { gap: 12, marginBottom: 12 },
   card: {
     flex: 1,
