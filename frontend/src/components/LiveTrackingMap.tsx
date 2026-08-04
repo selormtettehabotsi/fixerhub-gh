@@ -20,12 +20,17 @@ const WS_URL = BASE_URL.replace(/^http/, 'ws') + '/ws/websocket';
  * fitToCoordinates all keep working, because those are drawn by the SDK, not
  * fetched from Google.
  *
- * Trade-off worth remembering: OSM's public tile servers are donation-funded
- * and their usage policy rules out heavy commercial traffic. This is fine for
- * testing and early users; before a real launch, move to a paid tile host
- * (or Google, once billing exists) by changing this one URL.
+ * The tiles come from CARTO's CDN rather than tile.openstreetmap.org, which
+ * blocks clients that don't send a descriptive User-Agent — and react-native-
+ * maps' native tile loader sends okhttp's default, so those requests come back
+ * 403 and the map stays blank with no error surfaced anywhere. CARTO serves
+ * the same OpenStreetMap data from a CDN with no such restriction.
+ *
+ * Trade-off worth remembering: this is a free tier meant for modest traffic.
+ * Fine for testing and early users; before a real launch, move to a paid tile
+ * host (or Google, once billing exists) by changing this one URL.
  */
-const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_URL = 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
 /**
  * ROUTING — OSRM's public demo server, which needs no key and no billing.
@@ -244,9 +249,11 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
           longitudeDelta: 0.05,
         }}
       >
-        {/* Must be the first child: tiles render in declaration order, so a
-            later UrlTile would paint over the markers and the route line. */}
-        <UrlTile urlTemplate={OSM_TILE_URL} maximumZ={19} flipY={false} zIndex={-1} />
+        {/* First child so it paints beneath the markers and route line.
+            NOTE: no zIndex here. A negative zIndex pushed the tile overlay
+            behind the map surface itself on Android and nothing was drawn —
+            declaration order is enough. */}
+        <UrlTile urlTemplate={TILE_URL} maximumZ={19} flipY={false} />
 
         {worker && (
           <Marker
@@ -284,8 +291,9 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
         ) : null}
       </MapView>
 
-      {/* Required by OpenStreetMap's licence whenever their tiles are shown. */}
-      <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+      {/* Attribution is required by both OpenStreetMap's licence (the data)
+          and CARTO's terms (the tile rendering). */}
+      <Text style={styles.attribution}>© OpenStreetMap · CARTO</Text>
     </View>
   );
 }
