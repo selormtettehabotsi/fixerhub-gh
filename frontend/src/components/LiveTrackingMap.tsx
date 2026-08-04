@@ -15,10 +15,9 @@ const WS_URL = BASE_URL.replace(/^http/, 'ws') + '/ws/websocket';
  * Google's Maps SDK renders nothing but grey unless the Cloud project has an
  * active billing account, which needs a card on file. The SDK itself works
  * (it initialises, and the Google watermark appears) — only the tile layer is
- * withheld. So we keep the same MapView, set mapType="none" to switch Google's
- * base layer off, and draw OSM tiles into it ourselves. Markers, polylines and
- * fitToCoordinates all keep working, because those are drawn by the SDK, not
- * fetched from Google.
+ * withheld. So we keep the same MapView and draw OSM tiles into it ourselves
+ * as an overlay. Markers, polylines and fitToCoordinates all keep working,
+ * because those are drawn by the SDK, not fetched from Google.
  *
  * The tiles come from CARTO's CDN rather than tile.openstreetmap.org, which
  * blocks clients that don't send a descriptive User-Agent — and react-native-
@@ -237,10 +236,14 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        // "none" turns off the provider's own base layer so the UrlTile below
-        // is what you actually see. Without it OSM would be drawn on top of
-        // (or under) Google's, which is both wrong and a licensing problem.
-        mapType="none"
+        // Deliberately NOT mapType="none", which is the obvious choice here.
+        // On Google's newer Android renderer, MAP_TYPE_NONE suppresses tile
+        // overlays entirely: logcat shows "urlTile: creating TileProvider" and
+        // then nothing — not a single tile request, so no error to chase.
+        // "standard" keeps the overlay alive. There's no double-drawing to
+        // worry about, because Google's own base layer renders blank without
+        // billing, so the OSM tiles are all you see.
+        mapType="standard"
         style={styles.map}
         initialRegion={{
           latitude: worker?.latitude ?? customerLat ?? 5.6037,
