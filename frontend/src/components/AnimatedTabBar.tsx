@@ -1,6 +1,7 @@
 import React from 'react';
 import { useThemedStyles } from '../context/ThemeContext';
-import { Animated, TouchableOpacity, View, Text, StyleSheet, Platform } from 'react-native';
+import { Animated, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabBar } from '../context/TabBarContext';
@@ -11,10 +12,25 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
   const styles = useThemedStyles(makeStyles);
   const { translateY } = useTabBar();
   const { totalUnread } = useUnread();
-  // Distance the floating pill sits above the system nav/gesture zone.
-  // react-navigation already pads the tab-bar slot by the safe-area inset, so
-  // this is a small fixed gap on top of that. Tweak to move down/up.
-  const BOTTOM_GAP = 15;
+  const insets = useSafeAreaInsets();
+
+  // HOW HIGH THE PILL FLOATS.
+  //
+  // This used to be a flat 15, on the assumption that react-navigation pads the
+  // tab-bar slot by the safe-area inset. It does that for its OWN tab bar, but
+  // not for a custom `tabBar` that positions itself absolutely — so `bottom`
+  // was measured from the true screen edge and the pill landed on top of the
+  // system navigation bar.
+  //
+  // The inset is the whole point: it is ~0 with gesture navigation on some
+  // phones, ~24 with a gesture pill, and ~48 with 3-button navigation, and it
+  // changes the moment the user switches modes in Settings — no pixel constant
+  // can cover that. On iOS it's 34 on home-indicator devices and 0 on older
+  // ones, which the same expression handles.
+  //
+  // The floor matters: where the inset is 0 there is still a physical screen
+  // edge, and a pill flush against it looks wrong and is awkward to tap.
+  const BOTTOM_GAP = insets.bottom > 0 ? insets.bottom + 8 : 16;
 
   return (
     <Animated.View style={[styles.container, { bottom: BOTTOM_GAP, transform: [{ translateY }] }]}>
