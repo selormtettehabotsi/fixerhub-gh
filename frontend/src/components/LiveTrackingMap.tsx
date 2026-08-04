@@ -1,35 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useThemedStyles } from '../context/ThemeContext';
-import { View, Text, StyleSheet, Platform } from 'react-native';
-import MapView, { Marker, Polyline, UrlTile, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
+import LeafletMap from './LeafletMap';
 import { Client } from '@stomp/stompjs';
 import { Colors } from '../constants/colors';
 import { getFreshAccessToken } from '../api/client';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080';
 const WS_URL = BASE_URL.replace(/^http/, 'ws') + '/ws/websocket';
-/**
- * BASE MAP — OpenStreetMap raster tiles instead of Google's.
- *
- * Google's Maps SDK renders nothing but grey unless the Cloud project has an
- * active billing account, which needs a card on file. The SDK itself works
- * (it initialises, and the Google watermark appears) — only the tile layer is
- * withheld. So we keep the same MapView and draw OSM tiles into it ourselves
- * as an overlay. Markers, polylines and fitToCoordinates all keep working,
- * because those are drawn by the SDK, not fetched from Google.
- *
- * The tiles come from CARTO's CDN rather than tile.openstreetmap.org, which
- * blocks clients that don't send a descriptive User-Agent — and react-native-
- * maps' native tile loader sends okhttp's default, so those requests come back
- * 403 and the map stays blank with no error surfaced anywhere. CARTO serves
- * the same OpenStreetMap data from a CDN with no such restriction.
- *
- * Trade-off worth remembering: this is a free tier meant for modest traffic.
- * Fine for testing and early users; before a real launch, move to a paid tile
- * host (or Google, once billing exists) by changing this one URL.
- */
-const TILE_URL = 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
 /**
  * ROUTING — OSRM's public demo server, which needs no key and no billing.
@@ -117,7 +95,6 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
   const [connected, setConnected] = useState(false);
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const stompRef = useRef<Client | null>(null);
-  const mapRef = useRef<MapView>(null);
   const routeFetchBusy = useRef(false);
 
   useEffect(() => {
@@ -191,18 +168,6 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
     })();
   }, [worker?.latitude, worker?.longitude, customerLat, customerLng]);
 
-  // Keep the whole route (or both markers) in view as the worker moves
-  useEffect(() => {
-    if (!worker || !mapRef.current) return;
-    const coords: LatLng[] = route?.coords?.length
-      ? route.coords
-      : [{ latitude: worker.latitude, longitude: worker.longitude }];
-    if (customerLat && customerLng) coords.push({ latitude: customerLat, longitude: customerLng });
-    mapRef.current.fitToCoordinates(coords, {
-      edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
-      animated: true,
-    });
-  }, [worker?.latitude, worker?.longitude, customerLat, customerLng, route]);
 
   const hasEndpoints = worker && customerLat != null && customerLng != null;
   // Prefer Google's real driving distance/ETA; fall back to straight-line ~22 km/h
@@ -233,66 +198,30 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
         )}
       </View>
 
-      <MapView
-        ref={mapRef}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        // Deliberately NOT mapType="none", which is the obvious choice here.
-        // On Google's newer Android renderer, MAP_TYPE_NONE suppresses tile
-        // overlays entirely: logcat shows "urlTile: creating TileProvider" and
-        // then nothing — not a single tile request, so no error to chase.
-        // "standard" keeps the overlay alive. There's no double-drawing to
-        // worry about, because Google's own base layer renders blank without
-        // billing, so the OSM tiles are all you see.
-        mapType="standard"
+      {/* The map itself is a WebView (see LeafletMap): Google's Android map
+          surface refuses to composite anything without billing, so a native
+          MapView here draws nothing at all. Everything above — the STOMP
+          position feed, the OSRM route, the ETA — is unchanged; only the
+          renderer swapped. */}
+      <LeafletMap
         style={styles.map}
-        initialRegion={{
-          latitude: worker?.latitude ?? customerLat ?? 5.6037,
-          longitude: worker?.longitude ?? customerLng ?? -0.187,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-      >
-        {/* First child so it paints beneath the markers and route line.
-            NOTE: no zIndex here. A negative zIndex pushed the tile overlay
-            behind the map surface itself on Android and nothing was drawn —
-            declaration order is enough. */}
-        <UrlTile urlTemplate={TILE_URL} maximumZ={19} flipY={false} />
-
-        {worker && (
-          <Marker
-            coordinate={{ latitude: worker.latitude, longitude: worker.longitude }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            rotation={worker.heading ?? 0}
-            flat
-          >
-            <View style={styles.workerMarker}>
-              <Ionicons name="construct" size={16} color={Colors.onPrimary} />
-            </View>
-          </Marker>
-        )}
-        {customerLat != null && customerLng != null && (
-          <Marker coordinate={{ latitude: customerLat, longitude: customerLng }}>
-            <View style={styles.homeMarker}>
-              <Ionicons name="home" size={14} color={Colors.onPrimary} />
-            </View>
-          </Marker>
-        )}
-        {route?.coords?.length ? (
-          // Real road-following route from OSRM
-          <Polyline coordinates={route.coords} strokeColor={Colors.primary} strokeWidth={4} />
-        ) : hasEndpoints ? (
-          // Fallback while the route loads (or if Directions is unavailable)
-          <Polyline
-            coordinates={[
-              { latitude: worker!.latitude, longitude: worker!.longitude },
-              { latitude: customerLat!, longitude: customerLng! },
-            ]}
-            strokeColor={Colors.primary}
-            strokeWidth={3}
-            lineDashPattern={[8, 6]}
-          />
-        ) : null}
-      </MapView>
+        worker={worker ? { latitude: worker.latitude, longitude: worker.longitude } : null}
+        customer={
+          customerLat != null && customerLng != null
+            ? { latitude: customerLat, longitude: customerLng }
+            : null
+        }
+        route={
+          route?.coords?.length
+            ? route.coords
+            : hasEndpoints
+              ? [
+                  { latitude: worker!.latitude, longitude: worker!.longitude },
+                  { latitude: customerLat!, longitude: customerLng! },
+                ]
+              : undefined
+        }
+      />
 
       {/* Attribution is required by both OpenStreetMap's licence (the data)
           and CARTO's terms (the tile rendering). */}
@@ -350,24 +279,4 @@ const makeStyles = () => StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
   },
   map: { height: 340, width: '100%' },
-  workerMarker: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  homeMarker: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#2e9e5b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
 });
