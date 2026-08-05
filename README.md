@@ -8,8 +8,8 @@ Built by a team of students (FIXERHUB) at KNUST (Kwame Nkrumah University of Sci
 
 - **Nearby worker search** — GPS-based, sorted closest-first, with live-updating distances as either party moves
 - **Booking lifecycle** — request → accept/decline → quote → on the way → in progress → completed, enforced by a server-side state machine
-- **Uber-style live tracking** — customers watch their worker approach on a map with ETA; workers see the job location
-- **In-app chat** — real-time WebSocket (STOMP) messaging between customer and worker, with WhatsApp-style unread badges
+- **Uber-style live tracking** — customers watch their worker approach on a map with a road-following route and ETA; workers see the job location
+- **In-app chat** — real-time WebSocket (STOMP) messaging with read receipts, voice messages, photo sharing, unread badges, and cached history that stays readable offline
 - **Payments via Paystack** — customers pay in GH₵; the platform takes a configurable commission and pays workers out automatically to mobile money
 - **SMS + push notifications** — booking updates and payment receipts via African's Talking SMS and Firebase FCM
 - **Worker KYC verification** — ID + selfie review flow with admin approval
@@ -19,7 +19,9 @@ Built by a team of students (FIXERHUB) at KNUST (Kwame Nkrumah University of Sci
 - **Worker Pro subscription** — GH₵30/month for lower commission, a PRO badge, and priority in nearby search
 - **Referrals** — every user gets a share code; the referrer is credited when their invitee completes a first paid booking
 - **Retention** — favorite workers with one-tap rebooking, recurring bookings (weekly/bi-weekly/monthly), and worker "jobs completed" milestones
-- **Light / Dark / System theme** — selectable in-app and persisted
+- **Light / Dark / System theme** — selectable in-app, applied instantly without a reload
+- **Terms & Privacy** — in-app, accepted at sign-up and readable offline from either profile
+- **Over-the-air updates** — JS fixes ship without a store release; the app applies them on the launch that finds them, and both profiles show which bundle is running
 
 ## Architecture
 
@@ -38,6 +40,8 @@ Spring Boot microservices behind an API gateway, with service discovery, async e
 | admin-service | 8087 | Admin stats and management |
 
 **Stack:** Java 21 · Spring Boot 3.2 · Spring Cloud (Eureka, Gateway) · PostgreSQL (Flyway migrations) · Redis (caching) · Apache Kafka (booking events) · Docker Compose · React Native (Expo) frontend.
+
+**Maps:** the tracking map is Leaflet rendered in a WebView, with OpenStreetMap tiles served by CARTO and driving routes from OSRM — no Maps SDK, no API key, no billing account. Google Maps is used server-side only, to geocode a worker's address into coordinates when their profile is created.
 
 **Security highlights:** 15-minute JWTs with rotating 7-day refresh tokens (hashed at rest), gateway-signed identity headers verified by every downstream service, ownership checks on all resources, PII-sanitized public endpoints, authenticated WebSockets, idempotent payments and payouts, BigDecimal money end-to-end.
 
@@ -107,39 +111,43 @@ The build URL lives in `eas.json` (`preview.env.EXPO_PUBLIC_API_URL`), so the AP
 
 ## Deployment
 
-FixerHub is deployed publicly at **`https://api.fixerhub.me`** via a **Cloudflare Tunnel** that exposes the local `docker compose` stack over HTTPS — free, no cloud VM, no card required.
+FixerHub runs publicly at **`https://api.fixerhub.me`** on an **AWS EC2 t3.large** — the nine-service Docker stack behind Nginx, with TLS from Let's Encrypt and a Cloudflare A record pointing at an Elastic IP.
 
-**One-time setup**
-
-1. Register a free domain (e.g. a `.me` from the GitHub Student Pack / Namecheap) and add it to a free Cloudflare account; point the registrar's nameservers at Cloudflare.
-2. Install `cloudflared`, then create the named tunnel and DNS route:
-   ```bash
-   cloudflared tunnel login
-   cloudflared tunnel create fixerhub
-   cloudflared tunnel route dns fixerhub api.fixerhub.me
-   ```
-3. Create `~/.cloudflared/config.yml`:
-   ```yaml
-   tunnel: <tunnel-id>
-   credentials-file: C:/Users/<you>/.cloudflared/<tunnel-id>.json
-   ingress:
-     - hostname: api.fixerhub.me
-       service: http://localhost:8080
-     - service: http_status:404
-   ```
-
-**Run it**
+**On the instance**
 
 ```bash
-docker compose --profile app up -d          # the 9-service backend
-cloudflared tunnel run fixerhub             # expose it at https://api.fixerhub.me
+git clone https://github.com/selormtettehabotsi/fixerhub-gh.git
+cd fixerhub-gh
+cp .env.example .env          # fill in secrets
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d --build
 ```
 
-To keep the tunnel up without a terminal, install it as a background service (PowerShell as Administrator): copy `~/.cloudflared` into the SYSTEM profile, `cloudflared service install`, then `Start-Service Cloudflared`.
+`docker-compose.prod.yml` is a production overlay: `restart: unless-stopped`, per-service memory limits, a Postgres healthcheck, Kafka retention caps, and `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=65` so each JVM heap derives from its container limit rather than a hardcoded `-Xmx`.
 
-Point the app + webhook at the deployment: set `EXPO_PUBLIC_API_URL=https://api.fixerhub.me` (in `frontend/.env` and `eas.json`) and the Paystack webhook to `https://api.fixerhub.me/payments/webhook`.
+**In front of it**
 
-> This is a **pilot/demo** deployment — the backend runs through the host machine, so Docker and one `cloudflared` instance must stay running. A 24/7 production host would use a cloud VM behind TLS; everything else (custom domain, public reachability, HTTPS, working webhook) is already in place.
+Nginx proxies 80/443 to the gateway on 8080; `certbot --nginx` issues and renews the certificate. DNS is a plain A record from Cloudflare to the Elastic IP.
+
+Then point the app and the webhook at it: `EXPO_PUBLIC_API_URL=https://api.fixerhub.me` (in `frontend/.env` and `eas.json`) and the Paystack webhook to `https://api.fixerhub.me/payments/webhook`.
+
+**Notes**
+
+- First boot is slow — services take a couple of minutes to register with Eureka, and a 503 immediately after deploy usually means registration hasn't finished.
+- `backend/Dockerfile` uses a BuildKit `.m2` cache mount; without it, nine parallel cold Maven downloads exhaust DNS and the build fails on name resolution.
+
+> Still a **pilot** deployment: SSH is open while testing, Paystack is on test keys, SMS is on the Africa's Talking sandbox, and database backups to S3 are scripted (`scripts/backup-db.sh`) but not yet scheduled on the server.
+
+## Over-the-air updates
+
+JavaScript changes ship without rebuilding the APK:
+
+```bash
+cd frontend
+npx eas update --branch preview --message "what changed"
+```
+
+The app checks on launch and applies the update immediately rather than waiting for the next cold start, and both profile screens carry a **Check for updates** button plus a label showing which bundle is running. Native changes — a new native module, anything in `app.json` — still need a full `eas build`.
 
 ## Repository layout
 
