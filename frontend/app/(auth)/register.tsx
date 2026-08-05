@@ -197,6 +197,13 @@ interface InputFieldProps {
 
 function InputField({ label, value, onChangeText, placeholder, iconName, secureTextEntry, keyboardType, autoCapitalize }: InputFieldProps) {
   const styles = useThemedStyles(makeStyles);
+  // Password fields start masked and can be revealed. Login and the reset-password
+  // screen already worked this way; sign-up didn't, which is the worst place to
+  // omit it — it's the one form where a typo you can't see costs you the account
+  // and sends you round the password-reset loop on your first visit.
+  const [hidden, setHidden] = useState(true);
+  const isSecure = !!secureTextEntry;
+
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
@@ -208,11 +215,23 @@ function InputField({ label, value, onChangeText, placeholder, iconName, secureT
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={Colors.outline}
-          secureTextEntry={secureTextEntry}
+          secureTextEntry={isSecure && hidden}
           keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize ?? 'words'}
+          // Autocapitalising a password would silently uppercase the first
+          // character — invisible while masked, then a failed login later.
+          autoCapitalize={isSecure ? 'none' : (autoCapitalize ?? 'words')}
           autoCorrect={false}
         />
+        {isSecure && (
+          <TouchableOpacity
+            onPress={() => setHidden((h) => !h)}
+            style={styles.eyeBtn}
+            hitSlop={10}
+            accessibilityLabel={hidden ? 'Show password' : 'Hide password'}
+          >
+            <Ionicons name={hidden ? 'eye-outline' : 'eye-off-outline'} size={18} color={Colors.outline} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -254,6 +273,8 @@ const makeStyles = () => StyleSheet.create({
     height: 52,
   },
   inputIcon: { marginRight: 10 },
+  // Matches the login screen's toggle so the two forms feel like one flow.
+  eyeBtn: { padding: 4 },
   input: { flex: 1, fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_400Regular' },
   skillScroll: { marginTop: 4 },
   skillChip: {
