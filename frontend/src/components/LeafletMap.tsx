@@ -32,8 +32,15 @@ interface Props {
   worker?: LatLng | null;
   /** Customer's position (the destination pin). */
   customer?: LatLng | null;
-  /** Road-following route, when one has been fetched. */
+  /** Route to draw: either the real road geometry or a straight-line estimate. */
   route?: LatLng[];
+  /**
+   * True when `route` is the real road-following geometry from OSRM, false when
+   * it's the straight-line placeholder. Drawn differently on purpose — a
+   * straight line through buildings shouldn't look like a route someone can
+   * drive, and dashes are the usual way of saying "estimate".
+   */
+  routeIsRoad?: boolean;
   /** Fallback centre before anything is known — Accra. */
   fallback?: LatLng;
   style?: ViewStyle;
@@ -193,8 +200,13 @@ function buildHtml(center: LatLng): string {
 
         if (data.route && data.route.length) {
           var pts = data.route.map(function (p) { return [p.latitude, p.longitude]; });
-          if (routeLine) routeLine.setLatLngs(pts);
-          else routeLine = L.polyline(pts, { color: '#a33900', weight: 4 }).addTo(map);
+          // Solid = a real road route. Dashed = straight-line estimate, drawn
+          // while OSRM hasn't answered (or can't be reached).
+          var style = data.routeIsRoad
+            ? { color: '#a33900', weight: 4, dashArray: null, opacity: 0.9 }
+            : { color: '#a33900', weight: 3, dashArray: '8 6', opacity: 0.6 };
+          if (routeLine) { routeLine.setLatLngs(pts); routeLine.setStyle(style); }
+          else routeLine = L.polyline(pts, style).addTo(map);
           bounds = pts;
         } else if (routeLine) {
           map.removeLayer(routeLine); routeLine = null;
@@ -212,7 +224,7 @@ function buildHtml(center: LatLng): string {
 </html>`;
 }
 
-export default function LeafletMap({ worker, customer, route, fallback, style }: Props) {
+export default function LeafletMap({ worker, customer, route, routeIsRoad, fallback, style }: Props) {
   const webRef = useRef<WebView>(null);
 
   // Built once. The centre only seeds the very first view; after that the
@@ -224,7 +236,7 @@ export default function LeafletMap({ worker, customer, route, fallback, style }:
   );
 
   useEffect(() => {
-    const payload = JSON.stringify({ worker, customer, route });
+    const payload = JSON.stringify({ worker, customer, route, routeIsRoad });
     // The guard matters: this fires while the page may still be parsing, and
     // calling an undefined update() would throw inside the WebView.
     webRef.current?.injectJavaScript(
@@ -232,7 +244,7 @@ export default function LeafletMap({ worker, customer, route, fallback, style }:
          if (typeof update === 'function') update(d); else window.__pending = d;
        })(); true;`,
     );
-  }, [worker?.latitude, worker?.longitude, customer?.latitude, customer?.longitude, route]);
+  }, [worker?.latitude, worker?.longitude, customer?.latitude, customer?.longitude, route, routeIsRoad]);
 
   return (
     <WebView

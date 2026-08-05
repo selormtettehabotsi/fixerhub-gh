@@ -221,6 +221,7 @@ export default function LiveTrackingMap({ bookingId, workerName, customerLat, cu
                 ]
               : undefined
         }
+        routeIsRoad={!!route?.coords?.length}
       />
 
       {/* Attribution is required by both OpenStreetMap's licence (the data)
