@@ -130,7 +130,7 @@ function buildHtml(center: LatLng): string {
       options: { position: 'bottomright' },
       onAdd: function () {
         var b = L.DomUtil.create('div', 'recenter');
-        b.innerHTML = '\\u{25CE} Recenter';
+        b.innerHTML = 'Recenter';
         L.DomEvent.disableClickPropagation(b);
         b.onclick = function () { userMoved = false; showRecenter(false); fit(); };
         recenterBtn = b;
@@ -150,6 +150,20 @@ function buildHtml(center: LatLng): string {
       });
     }
 
+    // MARKER ICONS.
+    //
+    // Inline SVG, not emoji. The app's own markers use Ionicons, but that's a
+    // React Native font and doesn't exist inside this WebView — the first cut
+    // used emoji to get something on screen, which rendered differently on
+    // every Android version and looked nothing like the rest of the app.
+    // These are the same wrench and house shapes, drawn as paths.
+    var SVG_WRENCH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="#fff">' +
+      '<path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7' +
+      'C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3' +
+      'c.5-.4.5-1.1.1-1.4z"/></svg>';
+    var SVG_HOME = '<svg viewBox="0 0 24 24" width="14" height="14" fill="#fff">' +
+      '<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>';
+
     function icon(cls, glyph) {
       return L.divIcon({
         html: '<div class="pin ' + cls + '">' + glyph + '</div>',
@@ -166,14 +180,14 @@ function buildHtml(center: LatLng): string {
         if (data.worker) {
           var w = [data.worker.latitude, data.worker.longitude];
           if (workerMarker) workerMarker.setLatLng(w);
-          else workerMarker = L.marker(w, { icon: icon('pin-worker', '\\u{1F527}') }).addTo(map);
+          else workerMarker = L.marker(w, { icon: icon('pin-worker', SVG_WRENCH) }).addTo(map);
           bounds.push(w);
         }
 
         if (data.customer) {
           var c = [data.customer.latitude, data.customer.longitude];
           if (homeMarker) homeMarker.setLatLng(c);
-          else homeMarker = L.marker(c, { icon: icon('pin-home', '\\u{1F3E0}') }).addTo(map);
+          else homeMarker = L.marker(c, { icon: icon('pin-home', SVG_HOME) }).addTo(map);
           bounds.push(c);
         }
 
