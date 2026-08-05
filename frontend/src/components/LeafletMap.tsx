@@ -64,13 +64,29 @@ function buildHtml(center: LatLng): string {
     }
     .pin-worker { background: #a33900; }
     .pin-home   { background: #1b5e20; }
+    .recenter {
+      background: #fff; border-radius: 16px; padding: 6px 12px;
+      font: 12px -apple-system, Roboto, sans-serif; color: #a33900;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer;
+      margin: 0 10px 10px 0;
+    }
+    /* Bigger touch targets than Leaflet's desktop defaults. */
+    .leaflet-touch .leaflet-bar a { width: 34px; height: 34px; line-height: 34px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map', { zoomControl: false, attributionControl: true })
-                .setView([${center.latitude}, ${center.longitude}], 13);
+    var map = L.map('map', {
+      // Explicit rather than relying on defaults: these are the gestures.
+      dragging: true,
+      touchZoom: true,
+      doubleClickZoom: true,
+      scrollWheelZoom: false,   // no wheel on a phone; avoids odd behaviour in dev
+      zoomControl: true,        // +/- buttons, so zooming works even if pinch is
+                                // swallowed by a parent scroll view
+      attributionControl: true
+    }).setView([${center.latitude}, ${center.longitude}], 13);
 
     L.tileLayer('${TILE_URL}', {
       maxZoom: 19,
@@ -78,6 +94,61 @@ function buildHtml(center: LatLng): string {
     }).addTo(map);
 
     var workerMarker = null, homeMarker = null, routeLine = null;
+
+    // CAMERA OWNERSHIP.
+    //
+    // The map auto-fits both pins so you can see the whole journey. But the
+    // worker's position arrives every few seconds, and re-fitting on every
+    // frame means the moment you pan or zoom to look at something, the next
+    // update snaps you straight back — the map feels broken even though it's
+    // "working".
+    //
+    // So: auto-fit until the user touches the map, then leave the camera
+    // alone and offer a recenter button to hand control back.
+    //
+    // The "programmatic" flag distinguishes our own fitBounds/setView (which
+    // also fire dragstart/zoomstart) from a real finger on the screen.
+    var userMoved = false;
+    var programmatic = false;
+
+    function markUserMoved() { if (!programmatic) { userMoved = true; showRecenter(true); } }
+    map.on('dragstart', markUserMoved);
+    map.on('zoomstart', markUserMoved);
+
+    function apply(fn) {
+      programmatic = true;
+      try { fn(); } finally {
+        // Cleared after the animation, or the events it fires look like the user.
+        setTimeout(function () { programmatic = false; }, 400);
+      }
+    }
+
+    // Recenter control — a normal Leaflet control so it sits inside the map
+    // and doesn't need a React-side button overlaying the WebView.
+    var recenterBtn = null;
+    var Recenter = L.Control.extend({
+      options: { position: 'bottomright' },
+      onAdd: function () {
+        var b = L.DomUtil.create('div', 'recenter');
+        b.innerHTML = '\\u{25CE} Recenter';
+        L.DomEvent.disableClickPropagation(b);
+        b.onclick = function () { userMoved = false; showRecenter(false); fit(); };
+        recenterBtn = b;
+        b.style.display = 'none';
+        return b;
+      }
+    });
+    map.addControl(new Recenter());
+    function showRecenter(v) { if (recenterBtn) recenterBtn.style.display = v ? 'block' : 'none'; }
+
+    var lastBounds = [];
+    function fit() {
+      if (userMoved || !lastBounds.length) return;
+      apply(function () {
+        if (lastBounds.length === 1) map.setView(lastBounds[0], 15);
+        else map.fitBounds(lastBounds, { padding: [40, 40] });
+      });
+    }
 
     function icon(cls, glyph) {
       return L.divIcon({
@@ -115,8 +186,8 @@ function buildHtml(center: LatLng): string {
           map.removeLayer(routeLine); routeLine = null;
         }
 
-        if (bounds.length === 1) map.setView(bounds[0], 15);
-        else if (bounds.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
+        lastBounds = bounds;
+        fit();   // no-op once the user has taken over the camera
       } catch (e) { /* never let a bad frame break the map */ }
     }
 
@@ -157,9 +228,20 @@ export default function LeafletMap({ worker, customer, route, fallback, style }:
       source={{ html }}
       javaScriptEnabled
       domStorageEnabled
-      // Leaflet handles its own gestures; these stop the page bouncing.
-      scrollEnabled={false}
+      // GESTURES. scrollEnabled={false} was here to stop the page bouncing —
+      // it also stopped panning, because to the WebView a drag on the map IS
+      // a scroll. Leaflet needs those touches, and it manages its own inertia,
+      // so the page can't bounce anyway.
+      scrollEnabled
       bounces={false}
+      // The map lives inside a ScrollView on the booking screen. Without this
+      // the parent claims every vertical drag and the map only pans sideways.
+      nestedScrollEnabled
+      // Pinch-zoom: Android WebViews disable it by default, and Leaflet's
+      // touchZoom can't run without it. The controls stay hidden — Leaflet
+      // draws its own +/- buttons.
+      setBuiltInZoomControls
+      setDisplayZoomControls={false}
       // Android: without this the tile <img> loads are blocked on some devices.
       mixedContentMode="always"
       androidLayerType="hardware"
