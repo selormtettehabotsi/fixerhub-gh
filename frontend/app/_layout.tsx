@@ -137,6 +137,8 @@ function RootNavigator() {
         <Stack.Screen name="admin/users"      options={{ headerShown: true, title: 'Manage Users',      ...HEADER_STYLE }} />
         <Stack.Screen name="admin/bookings"   options={{ headerShown: true, title: 'All Bookings',      ...HEADER_STYLE }} />
         <Stack.Screen name="help"             options={{ headerShown: false }} />
+        {/* Legal draws its own header so the Terms/Privacy tabs sit under it. */}
+        <Stack.Screen name="legal"            options={{ headerShown: false }} />
         <Stack.Screen name="report"           options={{ headerShown: false }} />
         <Stack.Screen name="payment/receipt"  options={{ headerShown: false }} />
       </Stack>

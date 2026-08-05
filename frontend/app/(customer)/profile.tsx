@@ -151,6 +151,14 @@ export default function CustomerProfile() {
           <Text style={styles.role}>Customer</Text>
         </View>
 
+        {/* STRUCTURE. Previously this screen was one undifferentiated run of
+            rows — identity, referrals, theme, support and destructive actions
+            all with equal weight, so "Delete Account" sat two taps from "Help
+            Centre" with nothing to separate them. Labelled sections give the
+            page a shape you can scan, and put the irreversible actions in
+            their own clearly-marked block at the end. */}
+
+        <SectionTitle text="Your details" />
         <View style={styles.infoSection}>
           <InfoRow iconName="mail-outline" label="Email" value={email || '—'}
                    verified={verifStatus?.emailVerified} onVerify={() => setVerifyChannel('EMAIL')} />
@@ -159,20 +167,49 @@ export default function CustomerProfile() {
           <InfoRow iconName="finger-print-outline" label="User ID" value={userId ? formatUserId(userId) : '—'} />
         </View>
 
-        <ReferralCard />
-
-        <ThemeSelector />
-
+        <SectionTitle text="Account" />
         <View style={styles.menuSection}>
           <MenuRow iconName="create-outline" label="Edit Profile" onPress={() => setShowEditProfile(true)} />
           <View style={styles.menuDivider} />
           <MenuRow iconName="key-outline" label="Change Password" onPress={() => setShowChangePassword(true)} />
-          <View style={styles.menuDivider} />
-          <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
-          <View style={styles.menuDivider} />
-          <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
         </View>
 
+        <SectionTitle text="Rewards" />
+        <ReferralCard />
+
+        <SectionTitle text="Preferences" />
+        <ThemeSelector />
+
+        <SectionTitle text="Support" />
+        <View style={styles.menuSection}>
+          <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
+          <View style={styles.menuDivider} />
+          <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
+        </View>
+
+        <SectionTitle text="Legal" />
+        <View style={styles.menuSection}>
+          <MenuRow
+            iconName="document-text-outline"
+            label="Terms of Service"
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
+          />
+          <View style={styles.menuDivider} />
+          <MenuRow
+            iconName="shield-checkmark-outline"
+            label="Privacy Policy"
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
+          />
+        </View>
+
+        <SectionTitle text="App" />
+        {/* Manual update + the bundle currently running. The automatic check at
+            launch covers most cases; this is for "a fix went out, get it now". */}
+        <UpdateChecker />
+
+        {/* Everything below is either the end of a session or irreversible, so
+            it's fenced off rather than sitting in the same list as Help. */}
+        <SectionTitle text="Account actions" />
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Sign Out</Text>
@@ -182,10 +219,9 @@ export default function CustomerProfile() {
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
           <Text style={styles.deleteBtnText}>Delete Account</Text>
         </TouchableOpacity>
-
-        {/* Manual update + the bundle currently running. The automatic check at
-            launch covers most cases; this is for "a fix went out, get it now". */}
-        <UpdateChecker />
+        <Text style={styles.dangerHint}>
+          Deleting your account is permanent. Your bookings and messages can't be recovered.
+        </Text>
       </ScrollView>
 
       {/* ── Edit profile modal ────────────────────────────────────────── */}
@@ -259,6 +295,12 @@ export default function CustomerProfile() {
   );
 }
 
+/** Small uppercase label that introduces each group of rows. */
+function SectionTitle({ text }: { text: string }) {
+  const styles = useThemedStyles(makeStyles);
+  return <Text style={styles.sectionTitle}>{text}</Text>;
+}
+
 function MenuRow({ iconName, label, onPress }: { iconName: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void }) {
   const styles = useThemedStyles(makeStyles);
   return (
@@ -314,7 +356,28 @@ const makeStyles = () => StyleSheet.create({
   cameraBtn: { position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.surface },
   name: { fontSize: 22, fontWeight: '700', color: Colors.onSurface, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 4 },
   role: { fontSize: 16, color: Colors.onSurfaceVariant, fontFamily: 'Inter_400Regular', backgroundColor: Colors.surfaceContainerLow, paddingHorizontal: 14, paddingVertical: 4, borderRadius: 12 },
-  infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 24 },
+  // Section headings carry the vertical rhythm now, so the blocks themselves
+  // sit tighter (24 -> 14) and the gap above a heading does the separating.
+  sectionTitle: {
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_600SemiBold',
+    marginHorizontal: 24,
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  dangerHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginHorizontal: 32,
+    marginTop: 10,
+  },
+  infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 14 },
   infoRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 14 },
   infoContent: { flex: 1 },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -323,7 +386,7 @@ const makeStyles = () => StyleSheet.create({
   verifyBtnText: { fontSize: 12, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
   infoLabel: { fontSize: 13, color: Colors.outline, fontFamily: 'Inter_400Regular', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   infoValue: { fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
-  menuSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, marginBottom: 24, overflow: 'hidden' },
+  menuSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, marginBottom: 14, overflow: 'hidden' },
   menuRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   menuLabel: { flex: 1, fontSize: 16, color: Colors.onSurface, fontFamily: 'Inter_500Medium' },
   menuDivider: { height: 1, backgroundColor: Colors.surfaceContainerHigh, marginLeft: 50 },

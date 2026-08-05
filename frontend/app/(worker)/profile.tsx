@@ -325,7 +325,7 @@ export default function WorkerProfileScreen() {
           </View>
         </View>
 
-        {/* ── Info ──────────────────────────────────────────────────────── */}
+        <GroupTitle text="Your details" />
         <View style={styles.infoSection}>
           <InfoRow iconName="mail-outline"        label="Email"     value={email  || '—'}
                    verified={contactVerif?.emailVerified} onVerify={() => setVerifyChannel('EMAIL')} />
@@ -338,6 +338,7 @@ export default function WorkerProfileScreen() {
             Deliberately OUTSIDE the Business Settings accordion. The uploads
             live on /worker/verification; this row answers "am I verified?" at
             a glance, which is useless if it's hidden behind a collapse. */}
+        <GroupTitle text="Verification" />
         <TouchableOpacity
           style={styles.verifyRow}
           onPress={() => router.push('/worker/verification')}
@@ -578,24 +579,52 @@ export default function WorkerProfileScreen() {
         </>)}
         {/* ── end Business Settings ─────────────────────────────────────── */}
 
-        {/* ── Referrals ─────────────────────────────────────────────────── */}
+        <GroupTitle text="Rewards" />
         <ReferralCard />
 
-        {/* ── Appearance ────────────────────────────────────────────────── */}
+        <GroupTitle text="Preferences" />
         <ThemeSelector />
 
-        {/* ── Support menu ──────────────────────────────────────────────── */}
+        {/* Account management, support and legal were one undivided list, which
+            put "Change Password" beside "Help Centre" as if they were the same
+            kind of thing. Split into three short groups instead. */}
+        <GroupTitle text="Account" />
         <View style={styles.menuSection}>
           <MenuRow iconName="create-outline" label="Edit Profile" onPress={() => setShowEditProfile(true)} />
           <View style={styles.menuDivider} />
           <MenuRow iconName="key-outline" label="Change Password" onPress={() => setShowChangePassword(true)} />
-          <View style={styles.menuDivider} />
-          <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
-          <View style={styles.menuDivider} />
-          <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
         </View>
 
-        {/* ── Sign Out ──────────────────────────────────────────────────── */}
+        <GroupTitle text="Support" />
+        <View style={styles.menuSection}>
+          <MenuRow iconName="help-circle-outline" label="Help Centre" onPress={() => router.push('/help')} />
+          <View style={styles.menuDivider} />
+          <MenuRow iconName="flag-outline" label="Report an Issue" onPress={() => router.push('/report')} />
+        </View>
+
+        <GroupTitle text="Legal" />
+        <View style={styles.menuSection}>
+          <MenuRow
+            iconName="document-text-outline"
+            label="Terms of Service"
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
+          />
+          <View style={styles.menuDivider} />
+          <MenuRow
+            iconName="shield-checkmark-outline"
+            label="Privacy Policy"
+            onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
+          />
+        </View>
+
+        <GroupTitle text="App" />
+        {/* Manual update + the bundle currently running — see the customer profile. */}
+        <UpdateChecker />
+
+        {/* Session end and irreversible actions, fenced off at the bottom.
+            Delete Account used to sit directly under a menu row with no
+            separation at all. */}
+        <GroupTitle text="Account actions" />
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Sign Out</Text>
@@ -605,9 +634,9 @@ export default function WorkerProfileScreen() {
           <Ionicons name="trash-outline" size={16} color={Colors.error} />
           <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
         </TouchableOpacity>
-
-        {/* Manual update + the bundle currently running — see the customer profile. */}
-        <UpdateChecker />
+        <Text style={styles.dangerHint}>
+          Deleting your account is permanent. Your jobs, earnings history and reviews can't be recovered.
+        </Text>
       </ScrollView>
 
       {/* Edit profile modal */}
@@ -719,6 +748,14 @@ function InfoRow({ iconName, label, value, verified, onVerify }: {
 
 // ─── MenuRow ─────────────────────────────────────────────────────────────────
 
+/** Small uppercase label introducing a group of rows. Named GroupTitle, not
+ *  SectionTitle, because `sectionTitle` is already the big heading used beside
+ *  an icon (e.g. "FixerHub Pro") and the two are visually different. */
+function GroupTitle({ text }: { text: string }) {
+  const styles = useThemedStyles(makeStyles);
+  return <Text style={styles.groupTitle}>{text}</Text>;
+}
+
 function MenuRow({ iconName, label, onPress }: {
   iconName: React.ComponentProps<typeof Ionicons>['name'];
   label: string;
@@ -754,7 +791,28 @@ const makeStyles = () => StyleSheet.create({
   roleText: { fontSize: 16, color: Colors.primary, fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
 
   // Info section
-  infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 24 },
+  // Group headings now carry the vertical rhythm, so blocks sit tighter.
+  groupTitle: {
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_600SemiBold',
+    marginHorizontal: 24,
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  dangerHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginHorizontal: 32,
+    marginTop: 10,
+    marginBottom: 32,
+  },
+  infoSection: { marginHorizontal: 20, backgroundColor: Colors.surfaceContainerLowest, borderRadius: 14, padding: 4, marginBottom: 14 },
   infoRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 14 },
   infoContent: { flex: 1 },
   verifiedBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -877,7 +935,7 @@ const makeStyles = () => StyleSheet.create({
   logoutText: { fontSize: 15, color: Colors.error, fontFamily: 'Inter_600SemiBold' },
 
   // Delete account button
-  deleteAccountBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginTop: 4, marginBottom: 40, paddingVertical: 14 },
+  deleteAccountBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginTop: 4, marginBottom: 0, paddingVertical: 14 },
   deleteAccountBtnText: { color: Colors.error, fontSize: 14, fontFamily: 'Inter_400Regular', textDecorationLine: 'underline' },
 
   // Delete account modal

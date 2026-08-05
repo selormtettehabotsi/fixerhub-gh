@@ -158,6 +158,30 @@ export default function RegisterScreen() {
             )}
           </View>
 
+          {/* CONSENT. Placed immediately above the button, not buried in a
+              footer, because it has to be visible at the moment of agreeing.
+              No checkbox on purpose: a tick box adds a step without adding
+              meaning, and "by tapping X you agree" is the standard and is
+              equally binding. The links are tappable so the text is actually
+              reachable rather than nominally referenced. */}
+          <Text style={styles.consentText}>
+            By creating an account you agree to our{' '}
+            <Text
+              style={styles.consentLink}
+              onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
+            >
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text
+              style={styles.consentLink}
+              onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
+            >
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+
           <TouchableOpacity onPress={handleRegister} disabled={loading} activeOpacity={0.85} style={styles.btnWrapper}>
             <LinearGradient
               colors={[Colors.primary, Colors.primaryContainer]}
@@ -275,6 +299,21 @@ const makeStyles = () => StyleSheet.create({
   inputIcon: { marginRight: 10 },
   // Matches the login screen's toggle so the two forms feel like one flow.
   eyeBtn: { padding: 4 },
+  consentText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: Colors.onSurfaceVariant,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  consentLink: {
+    color: Colors.primary,
+    fontFamily: 'Inter_600SemiBold',
+    textDecorationLine: 'underline',
+  },
   input: { flex: 1, fontSize: 17, color: Colors.onSurface, fontFamily: 'Inter_400Regular' },
   skillScroll: { marginTop: 4 },
   skillChip: {
